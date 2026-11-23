@@ -275,3 +275,24 @@
 - Prompt generation from saved articles.
 - Improved search-result signature and explicit recovery guidance.
 - 196 tests passed.
+
+
+## Phase 8.35 — Entity Relationship & Influence Network
+- Added evidence-linked entity co-mention network, Graphviz view, evidence drill-down, JSON export, and cautious analysis prompt.
+- Co-mention edges do not assert real-world relationships.
+- Validation: 199 tests passed.
+
+## Phase 8.36 — Intelligence Report Center
+- Added evidence-linked case reports and six report profiles.
+- Added source provenance, claims, timeline, verification gaps, analytical and Egyptian-script prompts.
+- Added persistent `intel_reports` store collection and case deletion cascade.
+- Added dedicated tests for report integrity, gaps, prompts, and idempotent persistence.
+
+
+## Phase 8.37 - Automated Case Workflow
+- Added `automated_workflow.py` to orchestrate early-warning scanning, entity co-mention network, narrative comparison, and evidence-linked intelligence report generation for an existing case.
+- Added one-click case workflow UI with run summary and analysis/script prompt downloads.
+- Stores updated early-warning state and report in the existing store/Gist persistence path when configured.
+- Idempotent report reuse for unchanged case fingerprints; no duplicate report for identical input.
+- Explicitly labels this as analysis of already-collected case material. It does not perform live web collection or schedule background runs.
+- Added automated workflow tests.
