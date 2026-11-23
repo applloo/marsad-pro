@@ -167,21 +167,49 @@ st.markdown("""
 html, body, [class*="css"] {font-family:Tahoma,Arial,sans-serif!important;}
 .stApp {background:radial-gradient(ellipse at 82% -12%,rgba(85,75,190,.28),transparent 36%),radial-gradient(ellipse at 5% 25%,rgba(21,155,190,.14),transparent 34%),linear-gradient(145deg,#071326 0%,#09172c 48%,#0c1730 100%)!important;color:var(--m-text)!important;}
 [data-testid="stHeader"]{background:rgba(7,19,38,.82)!important;backdrop-filter:blur(16px);}
-[data-testid="stMainBlockContainer"]{max-width:1680px!important;padding:1.25rem clamp(.8rem,2vw,2rem) 3rem!important;}
+[data-testid="stMainBlockContainer"]{width:100%!important;max-width:none!important;padding:1.1rem clamp(.8rem,1.8vw,2rem) 3rem!important;}
 .stMarkdown, .stMarkdown p, .stMarkdown li, label, [data-testid="stWidgetLabel"], [data-testid="stCaptionContainer"], [data-testid="stMarkdownContainer"] {color:var(--m-text)!important;}
 [data-testid="stCaptionContainer"], .stCaption, small {color:var(--m-muted)!important;}
 h1,h2,h3,h4 {color:#fff!important;font-weight:850!important;letter-spacing:0!important;text-shadow:0 2px 18px rgba(53,215,238,.12);}
 h1{font-size:clamp(1.8rem,3vw,2.55rem)!important;}
 h2{font-size:clamp(1.35rem,2vw,1.8rem)!important;}
 .marsad-brand img{filter:drop-shadow(0 10px 24px rgba(46,196,220,.18));max-width:100%;height:auto;}
-/* Main navigation: vertical rail with a roomy work area */
-[data-testid="stTabs"]{display:grid!important;grid-template-columns:minmax(190px,225px) minmax(0,1fr)!important;gap:18px!important;align-items:start!important;}
-[data-testid="stTabs"] > div[role="tablist"]{grid-column:1!important;grid-row:1!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:8px!important;padding:12px!important;border:1px solid rgba(116,144,205,.24)!important;border-radius:20px!important;background:linear-gradient(160deg,rgba(20,39,72,.96),rgba(10,24,47,.96))!important;box-shadow:0 16px 40px rgba(0,0,0,.22),inset 0 1px rgba(255,255,255,.06)!important;position:sticky!important;top:1rem!important;max-height:calc(100vh - 3rem)!important;overflow-y:auto!important;}
-[data-testid="stTabs"] > div[role="tabpanel"]{grid-column:2!important;grid-row:1!important;min-width:0!important;padding:2px 0!important;}
-[data-testid="stTabs"] button[role="tab"]{width:100%!important;justify-content:flex-start!important;text-align:right!important;direction:rtl!important;white-space:normal!important;min-height:48px!important;padding:12px 14px!important;border:1px solid transparent!important;border-radius:13px!important;background:transparent!important;color:#dbe7ff!important;font-size:.96rem!important;font-weight:700!important;transition:all .2s ease!important;}
-[data-testid="stTabs"] button[role="tab"]:hover{background:rgba(70,120,190,.22)!important;border-color:rgba(83,211,233,.35)!important;transform:translateX(-2px);}
-[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{background:linear-gradient(115deg,rgba(45,199,220,.23),rgba(124,93,230,.28))!important;border:1px solid rgba(73,215,234,.7)!important;color:#fff!important;box-shadow:0 8px 22px rgba(21,154,190,.16),inset 3px 0 #35d7ee!important;}
-[data-baseweb="tab-highlight"],[data-baseweb="tab-border"]{display:none!important;}
+/* Main navigation: right-hand RTL rail; only the first-level tabs become the sidebar. */
+.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"]{
+ display:flex!important; flex-direction:row!important; direction:rtl!important;
+ align-items:flex-start!important; gap:20px!important; width:100%!important; min-width:0!important;
+}
+.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] [role="tablist"]{
+ order:0!important; flex:0 0 252px!important; width:252px!important; min-width:220px!important;
+ display:flex!important; flex-direction:column!important; align-items:stretch!important; gap:8px!important;
+ padding:12px!important; margin:0!important; white-space:normal!important;
+ border:1px solid rgba(116,144,205,.24)!important; border-radius:20px!important;
+ background:linear-gradient(160deg,rgba(20,39,72,.96),rgba(10,24,47,.96))!important;
+ box-shadow:0 16px 40px rgba(0,0,0,.22),inset 0 1px rgba(255,255,255,.06)!important;
+ position:sticky!important; top:1rem!important; max-height:calc(100vh - 3rem)!important; overflow-y:auto!important;
+}
+.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] [role="tabpanel"]{
+ order:1!important; flex:1 1 0!important; width:0!important; min-width:0!important;
+ padding:2px 0!important; direction:rtl!important; text-align:right!important;
+}
+.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] button[role="tab"]{
+ width:100%!important; min-width:0!important; justify-content:flex-start!important;
+ text-align:right!important; direction:rtl!important; white-space:normal!important;
+ min-height:50px!important; padding:12px 14px!important; margin:0!important;
+ border:1px solid transparent!important; border-radius:13px!important;
+ background:transparent!important; color:#e7efff!important; font-size:.98rem!important; font-weight:750!important;
+ transition:background .2s ease,border-color .2s ease,transform .2s ease!important;
+}
+.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] button[role="tab"]:hover{
+ background:rgba(70,120,190,.22)!important; border-color:rgba(83,211,233,.35)!important; transform:translateX(-2px)!important;
+}
+.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] button[role="tab"][aria-selected="true"]{
+ background:linear-gradient(115deg,rgba(45,199,220,.25),rgba(124,93,230,.30))!important;
+ border:1px solid rgba(73,215,234,.75)!important; color:#fff!important;
+ box-shadow:0 8px 22px rgba(21,154,190,.16),inset -3px 0 #35d7ee!important;
+}
+.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] [data-baseweb="tab-highlight"],
+.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] [data-baseweb="tab-border"]{display:none!important;}
 /* Cards, metrics and expanders */
 [data-testid="stVerticalBlockBorderWrapper"], [data-testid="stMetric"], [data-testid="stExpander"]{border:1px solid rgba(120,150,205,.28)!important;border-radius:18px!important;background:linear-gradient(145deg,rgba(23,43,77,.86),rgba(12,27,52,.94))!important;box-shadow:0 12px 28px rgba(0,0,0,.16),inset 0 1px rgba(255,255,255,.045)!important;}
 [data-testid="stMetric"]{padding:15px!important;}
@@ -203,10 +231,10 @@ a{color:#74ddf1!important;}
 .hm-stat{background:linear-gradient(145deg,#192f54,#101f3a)!important;border:1px solid #3b5684!important;box-shadow:0 8px 22px rgba(0,0,0,.18)!important;}
 .hm-stat b{color:#fff!important;}
 @media(max-width:850px){
- [data-testid="stTabs"]{grid-template-columns:1fr!important;gap:10px!important;}
- [data-testid="stTabs"] > div[role="tablist"]{grid-column:1!important;grid-row:1!important;position:relative!important;top:auto!important;max-height:none!important;display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;}
- [data-testid="stTabs"] > div[role="tabpanel"]{grid-column:1!important;grid-row:2!important;}
- [data-testid="stTabs"] button[role="tab"]{font-size:.88rem!important;padding:10px!important;min-height:44px!important;}
+ .stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"]{display:flex!important;flex-direction:column!important;gap:10px!important;}
+ .stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] [role="tablist"]{position:relative!important;top:auto!important;max-height:none!important;width:100%!important;flex:0 0 auto!important;display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+ .stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] [role="tabpanel"]{width:100%!important;flex:1 1 auto!important;}
+ .stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] button[role="tab"]{font-size:.88rem!important;padding:10px!important;min-height:44px!important;}
  [data-testid="stMainBlockContainer"]{padding-left:.65rem!important;padding-right:.65rem!important;}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}}
@@ -1225,6 +1253,8 @@ _now0 = datetime.now(timezone.utc)
 query, match, joiner, ctype = "", core.MATCH_MODES[0], "AND", "الكل"
 start_utc, end_utc, max_rec, verify, hide_nomatch = _now0 - timedelta(days=7), _now0, 30, True, False
 
+# علامة تنسيق لتحديد شريط التنقل الرئيسي فقط، دون التأثير على التابات الفرعية داخل الأقسام.
+st.markdown("<div id='marsad-main-nav-start'></div>", unsafe_allow_html=True)
 # تنقّل رئيسي مختصر: الوظائف مجمّعة حسب المهمة بدل 14 تبويباً متزاحماً.
 tab_home, tab_search, tab_intel, tab_ops, tab_library, tab_settings, tab_guide = st.tabs([
     "🏠 الرئيسية", "🔎 البحث والرصد", "🛰️ التحليل والاستخبارات",
