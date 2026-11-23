@@ -1,0 +1,30 @@
+name: مراقبة القضايا والتحديث الاستخباراتي
+concurrency:
+  group: marsad-case-monitor-${{ github.ref }}
+  cancel-in-progress: false
+on:
+  schedule:
+    - cron: "17 4 * * *" # يومياً 06:17 بتوقيت القاهرة شتاءً، 07:17 صيفاً
+  workflow_dispatch: {}
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: جمع الأخبار وفق إعدادات المرصد
+        run: python search_job.py
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN || secrets.GITHUB_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+      - name: تحديث ملفات القضايا وتشغيل التحليل
+        run: python scheduled_monitor.py
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN || secrets.GITHUB_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
