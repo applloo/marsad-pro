@@ -17,7 +17,7 @@ GIST_ID = "ضع_هنا_معرف_Gist_الخاص"
 
 # اختياري: تشغيل GitHub Actions من داخل التطبيق
 ACTIONS_TOKEN = "ضع_هنا_token_بصلاحية_Actions_write"
-GH_REPO = "applloo/marsad-news"
+GH_REPO = "applloo/marsad-pro"
 GH_BRANCH = "main"
 
 # أضف مزود الذكاء الاصطناعي الذي ستستخدمه فقط
@@ -44,7 +44,7 @@ GEMINI_API_KEY = ""
 - `GEMINI_API_KEY`: لا يحدد وحده إن كان المشروع على الخطة المجانية أو المدفوعة؛ اختر نوع الفوترة داخل AI Hub وتحقق من الأسعار والحصص في حساب Google.
 
 ## 4) إعداد GitHub Actions (إذا كنت تستخدم البحث والتقارير المجدولة)
-في إعدادات المستودع على GitHub أضف Repository Secrets التي تستخدمها الـworkflows، وعلى الأقل `GIST_TOKEN` و`GIST_ID` للتقارير التي تقرأ/تكتب إلى Gist. راجع ملفات `.github/workflows/` لمعرفة متغيرات كل مهمة. توكن `ACTIONS_TOKEN` داخل Streamlit منفصل عن أسرار الـworkflow.
+في إعدادات المستودع `applloo/marsad-pro` على GitHub افتح Settings → Secrets and variables → Actions، ثم أضف Repository Secrets التالية: `GIST_TOKEN` (توكن شخصي بصلاحية Gists للقراءة والكتابة) و`GIST_ID` (معرّف الـGist الذي يستخدمه المرصد). هذان السرّان مطلوبان للبحث والتقارير التي تقرأ/تكتب إلى Gist. لا تعتمد على `secrets.GITHUB_TOKEN` كبديل تلقائي؛ فهو ليس توكن Gist شخصياً.\n\nأما داخل Streamlit Cloud → Settings → Secrets، أضف `ACTIONS_TOKEN` لتشغيل المهام من أزرار التطبيق، مع صلاحية Actions: read/write وContents: read للمستودع، وأضف `GH_REPO = "applloo/marsad-pro"` و`GH_BRANCH = "main"`. هذا التوكن منفصل عن `GIST_TOKEN` وعن `GITHUB_TOKEN` المستخدم في التخزين الدائم داخل Streamlit. لا تضع أي قيمة سرية في GitHub أو المحادثة كنص عادي، ولا تكرر نفس التوكن بين الخدمات إلا عند الحاجة وبأقل صلاحية ممكنة.
 
 ## 5) اختبار بعد النشر
 1. افتح رابط التطبيق وسجّل دخول المالك باستخدام `ADMIN_KEY`.
