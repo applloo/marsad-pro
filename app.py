@@ -1822,41 +1822,52 @@ def home_search(q, keys, days, join, bar, use_gd=False):
 
 
 def render_home():
-    st.markdown("#### 🏠 الرئيسية")
-    q = st.text_input("🔎 ابحث في كل الاقسام مرة واحدة", key="home_q", placeholder="مثال: سد النهضة، مصر السعودية، سيناء")
+    st.markdown("<div class='marsad-topline'><div><div class='marsad-kicker'>MARSAD INTELLIGENCE DESK</div><div style='font-size:1.35rem;font-weight:850;color:#fff'>مركز القيادة والرصد</div><div class='sub'>تابع الإشارات الإخبارية وافتح أدوات التحليل من مساحة عمل واحدة</div></div><div style='font-size:2.5rem;filter:drop-shadow(0 8px 16px rgba(53,215,238,.28))'>📡</div></div>", unsafe_allow_html=True)
+    st.markdown("#### 🏠 لوحة القيادة")
+    q = st.text_input("🔎 بحث شامل في المرصد", key="home_q", placeholder="اكتب موضوعاً أو دولة أو شخصية أو حدثاً...")
     c1, c2, c3 = st.columns([3, 2, 2])
-    keys = c1.multiselect("الاقسام", list(HOME_SECTIONS), default=list(HOME_SECTIONS), format_func=lambda k: HOME_SECTIONS[k][0], key="home_secs")
-    days = pick(c2, "الفترة (ايام)", [1, 2, 3, 5, 7, 14, 30], 3, "home_days")
-    jl = c3.radio("لو اكتر من كلمة", ["اي منها", "كلها"], key="home_join")
-    use_gd = st.checkbox("🌐 ضم GDELT (ادق وابطأ)", value=False, key="home_gd",
-                         help="بيضيف نتايج GDELT لكل قسم. اتأخر من 3 لـ 8 دقايق. استخدمه للمواضيع المهمة.")
-    if st.button("🔎 ابحث في كل الاقسام", type="primary", use_container_width=True, key="home_go"):
+    keys = c1.multiselect("الأقسام", list(HOME_SECTIONS), default=list(HOME_SECTIONS), format_func=lambda k: HOME_SECTIONS[k][0], key="home_secs")
+    days = pick(c2, "الفترة (أيام)", [1, 2, 3, 5, 7, 14, 30], 3, "home_days")
+    jl = c3.radio("لو أكتر من كلمة", ["أي منها", "كلها"], key="home_join")
+    use_gd = st.checkbox("🌐 ضم GDELT (أدق وأبطأ)", value=False, key="home_gd",
+                         help="بيضيف نتائج GDELT لكل قسم. ممكن يستغرق عدة دقائق، استخدمه للموضوعات المهمة.")
+    if st.button("🔎 ابدأ البحث الشامل", type="primary", use_container_width=True, key="home_go"):
         if not q.strip() or not keys:
-            st.warning("اكتب كلمة بحث واختار قسم واحد على الاقل.")
+            st.warning("اكتب موضوع البحث واختار قسماً واحداً على الأقل.")
         else:
-            bar = st.progress(0.0, text="بدأنا…")
+            bar = st.progress(0.0, text="بدأنا...")
             home_search(q, keys, days, "AND" if jl == "كلها" else "OR", bar, use_gd)
             bar.empty()
     h = st.session_state.get("res_home")
     now_utc0 = datetime.now(timezone.utc).strftime("%Y%m%d")
     all_items = [a for k in HOME_SECTIONS for a in (st.session_state.get(f"res_{k}") or {}).get("items", [])]
     today_n = sum(1 for a in all_items if str(a.get("seendate", "")).startswith(now_utc0))
-    s1, s2, s3 = st.columns(3)
-    n_src = len({d for g in (ISRAEL, USA, UK, REGION) for ents in g.values() for _, d, _ in ents})
-    for col, num, lab in ((s1, today_n, "خبر النهارده (في نتايجك)"), (s2, len(all_items), "خبر محفوظ في الاقسام"), (s3, n_src, "مصدر مراقب")):
-        col.markdown(f"<div class='hm-stat'><b>{num}</b>{lab}</div>", unsafe_allow_html=True)
-    if not h:
-        st.caption("اكتب موضوعك مرة واحدة، وهتظهر النتائج مجمعة زمنياً. باقي أدوات الرصد والتحليل موجودة في الأقسام الرئيسية أعلى الصفحة.")
-        return
-    cnt = " · ".join(f"{HOME_SECTIONS[k][0]}: {n}" for k, n in h.get("counts", {}).items())
-    st.markdown(f"**نتيجة «{html.escape(h.get('q', ''))}»** — اخر {h.get('days')} يوم — {cnt}")
-    st.caption("دي آخر الأخبار مجمعة. للتفاصيل (ملخص، ترجمة المقال، حفظ) افتح قسم البحث والرصد.")
-    for a in h["items"][:25]:
-        sec = HOME_SECTIONS.get(a.get("_sec"), ("", None, "", "#555"))
-        ttl = html.escape(a.get("title_ar") or a.get("title") or "")
+    n_src = len({d for g in (ISRAEL, USA, UK, REGION, ARABIC, EGYPT) for ents in g.values() for _, d, _ in ents})
+    case_store = S().get("intel_case_files", {})
+    active_cases = len(case_store) if isinstance(case_store, dict) else 0
+    metrics = st.columns(4)
+    for col, num, lab in zip(metrics, (today_n, len(all_items), active_cases, n_src),
+                             ("نتائج مرصودة اليوم", "نتائج البحث المحفوظة", "ملفات القضايا التراكمية", "مصدر في كتالوج الرصد")):
+        col.markdown(f"<div class='hm-stat'><span style='color:#aebfd8;font-size:.88rem'>{lab}</span><b>{num:,}</b></div>", unsafe_allow_html=True)
+    st.markdown("<div style='display:flex;align-items:center;justify-content:space-between;margin:24px 0 10px'><h3 style='margin:0'>آخر ما تم رصده</h3><span style='color:#41d8e9;font-size:.82rem'>MONITORING FEED</span></div>", unsafe_allow_html=True)
+    if h:
+        cnt = " · ".join(f"{HOME_SECTIONS[k][0]}: {n}" for k, n in h.get("counts", {}).items())
+        st.markdown(f"**نتيجة «{html.escape(h.get('q', ''))}»** — آخر {h.get('days')} يوم — {cnt}")
+        st.caption("نتائج البحث الشامل مرتبة زمنياً. افتح الخبر لقراءة المصدر، واستخدم قسم البحث والرصد للترجمة والتلخيص والحفظ.")
+        display_items = h.get("items", [])[:25]
+    else:
+        display_items = sorted(all_items, key=lambda a: a.get("seendate", ""), reverse=True)[:12]
+        if display_items:
+            st.caption("أحدث النتائج المتاحة من عمليات البحث المحفوظة في الجلسة.")
+        else:
+            st.info("لا توجد نتائج محفوظة في الجلسة حالياً. اكتب موضوعاً بالأعلى لبدء البحث الشامل، أو افتح البحث والرصد من القائمة الجانبية.")
+    for a in display_items:
+        sec = HOME_SECTIONS.get(a.get("_sec"), ("", None, "", "#315b85"))
+        ttl = html.escape(a.get("title_ar") or a.get("title") or "عنوان غير متاح")
+        url = html.escape(a.get("url", ""))
         st.markdown(
-            f"<div class='hm-row'><span class='hm-tag' style='background:{sec[3]}'>{sec[0]}</span>"
-            f"<a href='{html.escape(a.get('url', ''))}' target='_blank'><b>{ttl}</b></a><br>"
+            f"<div class='hm-row'><span class='hm-tag' style='background:{sec[3]}'>{sec[0] or 'رصد'}</span> "
+            f"<a href='{url}' target='_blank' rel='noopener'><b>{ttl}</b></a><br>"
             f"<span class='meta'>{src_label(a.get('domain', ''), False)} · {_ago(a.get('seendate', ''))}</span></div>",
             unsafe_allow_html=True)
 
