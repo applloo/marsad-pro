@@ -112,7 +112,7 @@ def src_label(domain, with_domain=True):
         return html.escape(str(domain or "")) + f" (تعذّر تحديد الدولة: {type(e).__name__})"
 
 
-st.set_page_config(page_title="مرصد الأخبار", page_icon="🛰️", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Marsad | مركز الرصد والتحليل", page_icon="🔷", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown(
     """
@@ -154,6 +154,64 @@ a.btn:hover {background:#1596ff;}
 """,
     unsafe_allow_html=True,
 )
+
+
+# ───────────────────────── الهوية البصرية الجديدة ─────────────────────────
+st.markdown("""
+<style>
+:root {
+ --m-bg:#071326; --m-panel:#101f3b; --m-panel2:#14294b; --m-line:#30466d;
+ --m-text:#f4f7ff; --m-muted:#bdc9df; --m-cyan:#35d7ee; --m-violet:#a78bfa;
+ --m-blue:#4c8dff; --m-gold:#f6c76b;
+}
+html, body, [class*="css"] {font-family:Tahoma,Arial,sans-serif!important;}
+.stApp {background:radial-gradient(ellipse at 82% -12%,rgba(85,75,190,.28),transparent 36%),radial-gradient(ellipse at 5% 25%,rgba(21,155,190,.14),transparent 34%),linear-gradient(145deg,#071326 0%,#09172c 48%,#0c1730 100%)!important;color:var(--m-text)!important;}
+[data-testid="stHeader"]{background:rgba(7,19,38,.82)!important;backdrop-filter:blur(16px);}
+[data-testid="stMainBlockContainer"]{max-width:1680px!important;padding:1.25rem clamp(.8rem,2vw,2rem) 3rem!important;}
+.stMarkdown, .stMarkdown p, .stMarkdown li, label, [data-testid="stWidgetLabel"], [data-testid="stCaptionContainer"], [data-testid="stMarkdownContainer"] {color:var(--m-text)!important;}
+[data-testid="stCaptionContainer"], .stCaption, small {color:var(--m-muted)!important;}
+h1,h2,h3,h4 {color:#fff!important;font-weight:850!important;letter-spacing:0!important;text-shadow:0 2px 18px rgba(53,215,238,.12);}
+h1{font-size:clamp(1.8rem,3vw,2.55rem)!important;}
+h2{font-size:clamp(1.35rem,2vw,1.8rem)!important;}
+.marsad-brand img{filter:drop-shadow(0 10px 24px rgba(46,196,220,.18));max-width:100%;height:auto;}
+/* Main navigation: vertical rail with a roomy work area */
+[data-testid="stTabs"]{display:grid!important;grid-template-columns:minmax(190px,225px) minmax(0,1fr)!important;gap:18px!important;align-items:start!important;}
+[data-testid="stTabs"] > div[role="tablist"]{grid-column:1!important;grid-row:1!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:8px!important;padding:12px!important;border:1px solid rgba(116,144,205,.24)!important;border-radius:20px!important;background:linear-gradient(160deg,rgba(20,39,72,.96),rgba(10,24,47,.96))!important;box-shadow:0 16px 40px rgba(0,0,0,.22),inset 0 1px rgba(255,255,255,.06)!important;position:sticky!important;top:1rem!important;max-height:calc(100vh - 3rem)!important;overflow-y:auto!important;}
+[data-testid="stTabs"] > div[role="tabpanel"]{grid-column:2!important;grid-row:1!important;min-width:0!important;padding:2px 0!important;}
+[data-testid="stTabs"] button[role="tab"]{width:100%!important;justify-content:flex-start!important;text-align:right!important;direction:rtl!important;white-space:normal!important;min-height:48px!important;padding:12px 14px!important;border:1px solid transparent!important;border-radius:13px!important;background:transparent!important;color:#dbe7ff!important;font-size:.96rem!important;font-weight:700!important;transition:all .2s ease!important;}
+[data-testid="stTabs"] button[role="tab"]:hover{background:rgba(70,120,190,.22)!important;border-color:rgba(83,211,233,.35)!important;transform:translateX(-2px);}
+[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{background:linear-gradient(115deg,rgba(45,199,220,.23),rgba(124,93,230,.28))!important;border:1px solid rgba(73,215,234,.7)!important;color:#fff!important;box-shadow:0 8px 22px rgba(21,154,190,.16),inset 3px 0 #35d7ee!important;}
+[data-baseweb="tab-highlight"],[data-baseweb="tab-border"]{display:none!important;}
+/* Cards, metrics and expanders */
+[data-testid="stVerticalBlockBorderWrapper"], [data-testid="stMetric"], [data-testid="stExpander"]{border:1px solid rgba(120,150,205,.28)!important;border-radius:18px!important;background:linear-gradient(145deg,rgba(23,43,77,.86),rgba(12,27,52,.94))!important;box-shadow:0 12px 28px rgba(0,0,0,.16),inset 0 1px rgba(255,255,255,.045)!important;}
+[data-testid="stMetric"]{padding:15px!important;}
+[data-testid="stMetricValue"]{color:#fff!important;font-weight:850!important;}
+[data-testid="stMetricLabel"]{color:#c5d4ee!important;}
+[data-testid="stButton"] button, [data-testid="stDownloadButton"] button{border-radius:13px!important;border:1px solid rgba(87,207,232,.45)!important;background:linear-gradient(135deg,#2469b8,#5c4bb1)!important;color:#fff!important;font-weight:750!important;box-shadow:0 7px 18px rgba(31,91,166,.22)!important;transition:transform .18s ease,filter .18s ease!important;}
+[data-testid="stButton"] button:hover,[data-testid="stDownloadButton"] button:hover{filter:brightness(1.16)!important;transform:translateY(-2px)!important;}
+[data-testid="stButton"] button:focus{outline:2px solid var(--m-cyan)!important;}
+[data-baseweb="input"]>div,[data-baseweb="textarea"]>div,[data-baseweb="select"]>div,[data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea{background:#f8faff!important;color:#17243b!important;border:1px solid #9fb2d1!important;border-radius:12px!important;}
+[data-baseweb="select"] *{color:#17243b!important;}
+[data-testid="stRadio"] label,[data-testid="stCheckbox"] label{color:#edf3ff!important;}
+[data-testid="stAlert"]{border-radius:14px!important;}
+.stProgress>div>div{background:linear-gradient(90deg,#35d7ee,#a78bfa)!important;}
+a{color:#74ddf1!important;}
+.card,.hm-row{border:1px solid rgba(105,160,215,.32)!important;border-radius:17px!important;background:linear-gradient(145deg,rgba(25,48,84,.96),rgba(11,27,51,.96))!important;box-shadow:0 12px 26px rgba(0,0,0,.18),inset 0 1px rgba(255,255,255,.05)!important;}
+.ar-title{color:#fff!important;font-size:1.12rem!important;line-height:1.9!important;}
+.meta,.ltr{color:#c0cce0!important;}
+.badge{background:rgba(53,215,238,.16)!important;color:#b9f4ff!important;border:1px solid rgba(53,215,238,.35)!important;}
+.hm-stat{background:linear-gradient(145deg,#192f54,#101f3a)!important;border:1px solid #3b5684!important;box-shadow:0 8px 22px rgba(0,0,0,.18)!important;}
+.hm-stat b{color:#fff!important;}
+@media(max-width:850px){
+ [data-testid="stTabs"]{grid-template-columns:1fr!important;gap:10px!important;}
+ [data-testid="stTabs"] > div[role="tablist"]{grid-column:1!important;grid-row:1!important;position:relative!important;top:auto!important;max-height:none!important;display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+ [data-testid="stTabs"] > div[role="tabpanel"]{grid-column:1!important;grid-row:2!important;}
+ [data-testid="stTabs"] button[role="tab"]{font-size:.88rem!important;padding:10px!important;min-height:44px!important;}
+ [data-testid="stMainBlockContainer"]{padding-left:.65rem!important;padding-right:.65rem!important;}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}}
+</style>
+""", unsafe_allow_html=True)
 
 
 # ───────────────────────── القراءة الصوتية ─────────────────────────
@@ -586,13 +644,29 @@ def reader_page():
 
 import base64 as _b64
 
-_LOGO_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 140" width="520" height="140" role="img" aria-label="Ehab Ibrahim"> <defs> <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0f2a47"/><stop offset="1" stop-color="#0a1626"/></linearGradient> <linearGradient id="sw" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#22d3ee" stop-opacity="0"/><stop offset="1" stop-color="#22d3ee" stop-opacity=".75"/></linearGradient> </defs> <rect x="6" y="6" width="128" height="128" rx="28" fill="url(#bg)"/> <g transform="translate(70 70)" fill="none" stroke="#22d3ee" stroke-width="2.2" opacity=".9"> <circle r="46"/><circle r="31"/><circle r="16"/> <path d="M-46 0H46M0 -46V46" stroke-opacity=".35"/> </g> <path d="M70 70 L70 24 A46 46 0 0 1 110 47 Z" fill="url(#sw)"/> <line x1="70" y1="70" x2="110" y2="47" stroke="#67e8f9" stroke-width="2.5" stroke-linecap="round"/> <circle cx="94" cy="52" r="4.5" fill="#fbbf24"/><circle cx="52" cy="88" r="3.2" fill="#f87171"/> <text x="156" y="68" font-family="Georgia, \'Times New Roman\', serif" font-size="46" font-weight="700" fill="#e2e8f0">Ehab Ibrahim</text> <rect x="158" y="80" width="64" height="4" rx="2" fill="#22d3ee"/> <text x="158" y="112" font-family="Tahoma, Arial, sans-serif" font-size="21" fill="#94a3b8" letter-spacing=".5">رادار الأخبار العالمية</text> </svg> '
-
+_LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 150" width="520" height="150" role="img" aria-label="Marsad Intelligence Center">
+<defs>
+ <linearGradient id="orb" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset=".48" stop-color="#22d3ee"/><stop offset="1" stop-color="#2563eb"/></linearGradient>
+ <linearGradient id="glass" x1="0" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".48"/><stop offset="1" stop-color="#fff" stop-opacity=".02"/></linearGradient>
+ <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="8"/></filter>
+</defs>
+<circle cx="76" cy="76" r="64" fill="#22d3ee" opacity=".18" filter="url(#shadow)"/>
+<circle cx="76" cy="76" r="57" fill="#101d36" stroke="#5267c9" stroke-width="2"/>
+<circle cx="76" cy="76" r="43" fill="none" stroke="#39d8ed" stroke-width="2" opacity=".9"/>
+<circle cx="76" cy="76" r="29" fill="none" stroke="#a78bfa" stroke-width="2" opacity=".9"/>
+<path d="M76 18 A58 58 0 0 1 130 55 L76 76Z" fill="url(#orb)" opacity=".9"/>
+<path d="M76 76 L119 48" stroke="#f8fafc" stroke-width="3" stroke-linecap="round"/>
+<circle cx="119" cy="48" r="6" fill="#fbbf24" stroke="#fff" stroke-width="2"/>
+<circle cx="76" cy="76" r="9" fill="url(#orb)" stroke="#fff" stroke-width="2"/>
+<path d="M35 104 Q76 126 117 104" fill="none" stroke="#a78bfa" stroke-width="3" stroke-linecap="round"/>
+<text x="160" y="70" font-family="Arial,Tahoma,sans-serif" font-size="49" font-weight="800" fill="#f8fafc" letter-spacing="1">MARSAD</text>
+<text x="163" y="108" font-family="Tahoma,Arial,sans-serif" font-size="22" font-weight="600" fill="#a5b4fc">مركز الرصد والتحليل الاستخباراتي</text>
+</svg>"""
 
 def show_logo(width=300):
     """شعار المالك (Ehab Ibrahim) فوق في التاب"""
     b = _b64.b64encode(_LOGO_SVG.encode("utf-8")).decode()
-    st.markdown(f"<div style='direction:ltr;text-align:left;margin:0 0 6px'><img alt='Ehab Ibrahim' width='{width}' src='data:image/svg+xml;base64,{b}'></div>",
+    st.markdown(f"<div class='marsad-brand' style='direction:ltr;text-align:left;margin:0 0 12px'><img alt='Marsad Intelligence Center' width='{width}' src='data:image/svg+xml;base64,{b}'></div>",
                 unsafe_allow_html=True)
 
 
@@ -905,8 +979,8 @@ def do_analyze():
 # ───────────────────────── الواجهة الرئيسية ─────────────────────────
 
 show_logo()
-st.title("🛰️ مرصد الأخبار")
-st.caption("منصة رصد وتحليل الأخبار والمعلومات من مصادر متعددة")
+st.title("مركز مرصد | الرصد والتحليل")
+st.caption("منصة استخبارات المصادر المفتوحة · اجمع الإشارات، اربط الأدلة، وافهم الصورة الكاملة")
 if not IS_ADMIN:
     _a = st.session_state["auth"]
     st.info(f"🎟️ نسخة تجريبية لـ «{_a.get('label', '')}» — "
