@@ -1,0 +1,2087 @@
+# -*- coding: utf-8 -*-
+"""منطق البحث والترجمة (بدون Streamlit) - يعتمد على GDELT DOC 2.0 API"""
+import base64
+import email.utils
+import html as _html
+import ipaddress
+import json
+import re
+import socket
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
+from functools import lru_cache
+from urllib.parse import quote, unquote, urljoin, urlparse
+from zoneinfo import ZoneInfo
+
+import xml.etree.ElementTree as ET
+from html.parser import HTMLParser
+
+import requests
+
+try:  # اختياري: إن لم تتوفر الحزمة يعمل مستخرج بديل مدمج
+    import trafilatura
+except Exception:
+    trafilatura = None
+try:
+    from deep_translator import GoogleTranslator
+except Exception:
+    GoogleTranslator = None
+
+TZ = ZoneInfo("Africa/Cairo")
+_HAS_AR = re.compile(r"[\u0600-\u06FF]")
+_NIKUD = re.compile(r"[\u0591-\u05C7]")
+
+
+class TranslationError(Exception):
+    pass
+
+GDELT_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
+UA = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+}
+
+# ───────────────────────── الترجمة ─────────────────────────
+
+
+_TR_CACHE = {}
+
+
+def _gtx(text, src, dest):
+    url = "https://translate.googleapis.com/translate_a/single"
+    prm = {"client": "gtx", "sl": src, "tl": dest, "dt": "t"}
+    if len(text) > 500:  # النص الطويل (العبرية خصوصاً) يتجاوز حد طول الرابط في GET
+        r = requests.post(url, params=prm, data={"q": text}, headers=UA, timeout=30)
+    else:
+        r = requests.get(url, params={**prm, "q": text}, headers=UA, timeout=20)
+    r.raise_for_status()
+    return "".join(seg[0] for seg in r.json()[0] if seg and seg[0])
+
+
+def _gtx_alt(text, src, dest):
+    """مسار ثانٍ لترجمة جوجل (واجهة إضافة المتصفح) عند تعذّر المسار الأول"""
+    r = requests.get("https://clients5.google.com/translate_a/t",
+                     params={"client": "dict-chrome-ex", "sl": src, "tl": dest, "q": text}, headers=UA, timeout=20)
+    r.raise_for_status()
+    j = r.json()
+    if isinstance(j, dict):
+        return "".join(s.get("trans", "") for s in j.get("sentences", []))
+    return j[0] if isinstance(j[0], str) else j[0][0]
+
+
+def _gtx_mobile(text, src, dest):
+    """مسار ثالث: صفحة جوجل للموبايل (HTML)"""
+    r = requests.get("https://translate.google.com/m", params={"sl": src, "tl": dest, "q": text}, headers=UA, timeout=20)
+    r.raise_for_status()
+    m = re.search(r'class="result-container">(.*?)</div>', r.text, re.S)
+    if not m:
+        raise ValueError("no result")
+    return _html.unescape(m.group(1)).strip()
+
+
+# قاموس مدمج للمصطلحات الإقليمية الأساسية: لا يعتمد على أي إنترنت، ويضمن ترجمة صحيحة لها (عبري/إنجليزي/تركي/فارسي/أمهري)
+_GLOSS = {
+    "اثيوبيا": {"iw": "אתיופיה", "en": "Ethiopia", "tr": "Etiyopya", "fa": "اتیوپی", "am": "ኢትዮጵያ"},
+    "مصر": {"iw": "מצרים", "en": "Egypt", "tr": "Mısır", "fa": "مصر", "am": "ግብፅ"},
+    "السودان": {"iw": "סודאן", "en": "Sudan", "tr": "Sudan", "fa": "سودان", "am": "ሱዳን"},
+    "ليبيا": {"iw": "לוב", "en": "Libya", "tr": "Libya", "fa": "لیبی", "am": "ሊቢያ"},
+    "اريتريا": {"iw": "אריתריאה", "en": "Eritrea", "tr": "Eritre", "fa": "اریتره", "am": "ኤርትራ"},
+    "الصومال": {"iw": "סומליה", "en": "Somalia", "tr": "Somali", "fa": "سومالی", "am": "ሶማሊያ"},
+    "اسرائيل": {"iw": "ישראל", "en": "Israel", "tr": "İsrail", "fa": "اسرائیل", "am": "እስራኤል"},
+    "تركيا": {"iw": "טורקיה", "en": "Turkey", "tr": "Türkiye", "fa": "ترکیه", "am": "ቱርክ"},
+    "ايران": {"iw": "איראן", "en": "Iran", "tr": "İran", "fa": "ایران", "am": "ኢራን"},
+    "روسيا": {"iw": "רוסיה", "en": "Russia", "tr": "Rusya", "fa": "روسیه", "am": "ሩሲያ"},
+    "الصين": {"iw": "סין", "en": "China", "tr": "Çin", "fa": "چین", "am": "ቻይና"},
+    "غزة": {"iw": "עזה", "en": "Gaza", "tr": "Gazze", "fa": "غزه", "am": "ጋዛ"},
+    "اليمن": {"iw": "תימן", "en": "Yemen", "tr": "Yemen", "fa": "یمن", "am": "የመን"},
+    "سد النهضه": {"iw": "סכר התחייה", "en": "Renaissance Dam", "tr": "Rönesans Barajı", "fa": "سد رنسانس", "am": "የህዳሴ ግድብ"},
+    "الجيش المصري": {"iw": "הצבא המצרי", "en": "Egyptian army", "tr": "Mısır ordusu", "fa": "ارتش مصر", "am": "የግብፅ ጦር"},
+    "البحر الاحمر": {"iw": "הים האדום", "en": "Red Sea", "tr": "Kızıldeniz", "fa": "دریای سرخ", "am": "ቀይ ባህር"},
+    "باب المندب": {"iw": "באב אל-מנדב", "en": "Bab el-Mandeb", "tr": "Babülmendep", "fa": "باب المندب", "am": "ባብ ኤል ማንዴብ"},
+    "قناه السويس": {"iw": "תעלת סואץ", "en": "Suez Canal", "tr": "Süveyş Kanalı", "fa": "کانال سوئز", "am": "የሱዌዝ ካናል"},
+    "سلاح": {"iw": "נשק", "en": "weapons", "tr": "silah", "fa": "سلاح", "am": "የጦር መሳሪያ"},
+    "اسلحه": {"iw": "נשק", "en": "weapons", "tr": "silah", "fa": "سلاح", "am": "የጦር መሳሪያ"},
+    "تسليح": {"iw": "חימוש", "en": "armament", "tr": "silahlanma", "fa": "تسلیحات", "am": "ትጥቅ"},
+    "طائرات": {"iw": "מטוסים", "en": "aircraft", "tr": "uçak", "fa": "هواپیما", "am": "አውሮፕላኖች"},
+    "مقاتلات": {"iw": "מטוסי קרב", "en": "fighter jets", "tr": "savaş uçağı", "fa": "جنگنده", "am": "ተዋጊ ጄቶች"},
+    "سوخوي": {"iw": "סוחוי", "en": "Sukhoi", "tr": "Sukhoi", "fa": "سوخو", "am": "Sukhoi"},
+    "طيارات": {"iw": "מטוסים", "en": "aircraft", "tr": "uçak", "fa": "هواپیما", "am": "አውሮፕላኖች"},
+}
+
+
+def _norm_ar(s):
+    s = re.sub(r"[\u064B-\u0652\u0640]", "", s or "")
+    s = re.sub(r"[أإآٱ]", "ا", s).replace("ى", "ي").replace("ة", "ه")
+    return " ".join(re.sub(r"[()\[\]{}\"“”«»،,.;:!?]", " ", s).split())
+
+
+def gloss_tr(text, dest):
+    """ترجمة من القاموس المدمج (العبارة كاملة أو كلمة كلمة بشرط أن تكون كلها معروفة)، وإلا None"""
+    d = {"he": "iw"}.get(dest, dest)
+    if d not in ("iw", "en", "tr", "fa", "am") or not _HAS_AR.search(text or ""):
+        return None
+    n = _norm_ar(text)
+    if n in _GLOSS:
+        return _GLOSS[n][d]
+    out = []
+    for w in n.split():
+        if w in _GLOSS:
+            out.append(_GLOSS[w][d])
+        elif w.isdigit() or re.fullmatch(r"[\w\-]+", w) and not _HAS_AR.search(w):
+            out.append(w)
+        else:
+            return None
+    return " ".join(out) if out else None
+
+
+def tr(text, src="auto", dest="ar"):
+    """يترجم ولا يخزّن نتائج الفشل (حتى لا يبقى الفشل المؤقت دائماً)"""
+    text = (text or "").strip()
+    if not text:
+        return ""
+    if src == dest:
+        return text
+    key = (text, src, dest)
+    if key in _TR_CACHE:
+        return _TR_CACHE[key]
+    if src in ("auto", "ar"):
+        g = gloss_tr(text, dest)
+        if g:
+            return g
+    for attempt in range(3):
+        for fn in (
+            (lambda: GoogleTranslator(source=src, target=dest).translate(text)) if GoogleTranslator else None,
+            lambda: _gtx(text, src, dest),
+            (lambda: _gtx_alt(text, src, dest)) if attempt >= 1 else None,
+            (lambda: _gtx_mobile(text, src, dest)) if attempt >= 2 else None,
+        ):
+            if fn is None:
+                continue
+            try:
+                out = (fn() or "").strip()
+                if dest in ("iw", "he"):
+                    out = _NIKUD.sub("", out)  # تشكيل العبرية يمنع المطابقة مع نصوص المقالات
+                if out and not (src == "ar" and dest != "ar" and _HAS_AR.search(out)):
+                    if len(_TR_CACHE) > 8000:
+                        _TR_CACHE.clear()
+                    _TR_CACHE[key] = out
+                    return out
+            except Exception:
+                pass
+        time.sleep(0.8)
+    return text
+
+
+def chunk_text(text, limit=4000):
+    chunks, cur = [], ""
+    for para in text.split("\n"):
+        para = para.strip()
+        if not para:
+            continue
+        while len(para) > limit:
+            cut = para.rfind(". ", 0, limit)
+            cut = cut + 1 if cut > 0 else limit
+            if cur:
+                chunks.append(cur)
+                cur = ""
+            chunks.append(para[:cut])
+            para = para[cut:].strip()
+        if not para:
+            continue
+        if cur and len(cur) + len(para) + 1 > limit:
+            chunks.append(cur)
+            cur = para
+        else:
+            cur = f"{cur}\n{para}" if cur else para
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
+_LONG_CACHE = {}
+
+
+def translated_ok(src, out):
+    """هل تُرجم النص فعلاً؟ (غير العربي أصلاً ويظهر في الناتج عربي كافٍ)"""
+    if _HAS_AR.search(src or "") and len(re.findall(r"[\u0600-\u06FF]", src)) > 0.5 * max(1, len(re.findall(r"\w", src))):
+        return True  # عربي أصلاً
+    letters = re.findall(r"\w", out or "")
+    return bool(letters) and len(re.findall(r"[\u0600-\u06FF]", out)) > 0.4 * len(letters)
+
+
+def translate_long(text):
+    """يترجم نصاً طويلاً بشرائح صغيرة؛ ما فشل يُعاد بفقرات متتابعة؛ ولا يُخزَّن إلا الناجح كاملاً"""
+    if text in _LONG_CACHE:
+        return _LONG_CACHE[text]
+
+    def one(c):
+        r = tr(c, "auto", "ar")
+        if translated_ok(c, r):
+            return r
+        outp = []  # أعد بفقرات أصغر ببطء
+        for para in c.split("\n"):
+            if not para.strip():
+                continue
+            time.sleep(0.4)
+            outp.append(tr(para, "auto", "ar"))
+        return "\n".join(outp)
+
+    chunks = chunk_text(text, 1500)
+    with ThreadPoolExecutor(3) as ex:
+        parts = list(ex.map(one, chunks))
+    out = "\n".join(parts)
+    if translated_ok(text, out):
+        if len(_LONG_CACHE) > 100:
+            _LONG_CACHE.clear()
+        _LONG_CACHE[text] = out
+    return out
+
+
+# ───────────────────────── جلب المقال ─────────────────────────
+
+
+def is_safe_url(url):
+    try:
+        p = urlparse(url)
+        if p.scheme not in ("http", "https") or not p.hostname:
+            return False
+        for info in socket.getaddrinfo(p.hostname, None):
+            ip = ipaddress.ip_address(info[4][0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                return False
+        return True
+    except Exception:
+        return False
+
+
+_VOID = {"br", "img", "meta", "link", "input", "hr", "source", "wbr", "area", "base", "col", "embed", "param", "track"}
+_BLOCKS = {"p", "li", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "div", "section", "article", "main", "tr", "td", "th",
+           "ul", "ol", "table", "figure", "figcaption", "details", "summary", "dd", "dt", "pre", "br"}
+_SHORT_OK = {"li", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "figcaption", "summary"}
+_CONTAINER = re.compile(r"entry-content|post-content|article-body|article__body|td-post-content|single-content|post-body|story-body|the-content", re.I)
+
+
+class _SimpleExtractor(HTMLParser):
+    """مستخرج بديل: كل نص مقروء بين حدود الكتل (فقرات، قوائم، عناوين، div، فواصل <br>)، مع تفضيل حاوية المقال إن وُجدت"""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.title, self.date = "", ""
+        self._all, self._cont = [], []
+        self._skip, self._in_title, self._buf, self._stack, self._cdepth = 0, False, [], [], None
+
+    @property
+    def paras(self):
+        cont = "\n".join(self._cont)
+        return self._cont if len(cont) >= 400 else self._all
+
+    def _flush(self):
+        t = " ".join("".join(self._buf).split())
+        self._buf = []
+        if not t:
+            return
+        top = self._stack[-1] if self._stack else ""
+        if len(t) >= (10 if top in _SHORT_OK else (22 if self._cdepth is not None else 40)):
+            self._all.append(t)
+            if self._cdepth is not None:
+                self._cont.append(t)
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag in ("script", "style", "nav", "footer", "header", "aside", "form", "noscript"):
+            self._skip += 1
+        elif tag == "title":
+            self._in_title = True
+        elif tag == "meta":
+            k = (a.get("property") or a.get("name") or "").lower()
+            if k in ("article:published_time", "og:article:published_time", "date", "pubdate") and not self.date:
+                self.date = a.get("content", "")
+            if k == "og:title" and a.get("content"):
+                self.title = a["content"]
+        if tag in _BLOCKS and not self._skip:
+            self._flush()
+        if tag not in _VOID:
+            self._stack.append(tag)
+            if self._cdepth is None and (tag == "article" or _CONTAINER.search((a.get("class") or "") + " " + (a.get("id") or ""))):
+                self._cdepth = len(self._stack)
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style", "nav", "footer", "header", "aside", "form", "noscript"):
+            self._skip = max(0, self._skip - 1)
+        elif tag == "title":
+            self._in_title = False
+        if tag in _BLOCKS and not self._skip:
+            self._flush()
+        if tag in self._stack:
+            while self._stack:
+                if self._stack.pop() == tag:
+                    break
+            if self._cdepth is not None and len(self._stack) < self._cdepth:
+                self._cdepth = None
+
+    def handle_data(self, data):
+        if self._in_title and not self.title:
+            self.title = data.strip()
+        if not self._skip and not self._in_title:
+            self._buf.append(data)
+
+    def close(self):
+        self._flush()
+        super().close()
+
+
+_META_SEC = [
+    re.compile(
+        r'<meta[^>]+(?:property|name)=["\'](?:article:section|section|parsely-section|og:section|category)["\'][^>]*content=["\']([^"\']+)',
+        re.I,
+    ),
+    re.compile(
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]*(?:property|name)=["\'](?:article:section|section|parsely-section|og:section|category)["\']',
+        re.I,
+    ),
+    re.compile(r'"articleSection"\s*:\s*\[?\s*"([^"]+)"', re.I),
+]
+_FIRST_PERSON = re.compile(r"\b(I|my|me|myself)\b")
+
+
+def _page_meta(html_text):
+    secs = []
+    for rx in _META_SEC:
+        m = rx.search(html_text)
+        if m:
+            secs.append(m.group(1))
+    return " | ".join(secs)
+
+
+_BOILER = {"supported by", "advertisement", "skip advertisement", "story continues below advertisement", "listen to this article",
+           "share full article", "continue reading the main story", "sign up for", "the opinions", "read in app", "subscribe", "newsletter"}
+
+
+def _drop_boiler(txt):
+    out = []
+    for ln in (txt or "").split("\n"):
+        k = ln.strip().lower().rstrip(".:")
+        if k in _BOILER:
+            continue
+        out.append(ln)
+    return "\n".join(out)
+
+
+def _authors_from_html(page):
+    """اسماء الكتّاب من وسوم الصفحة وJSON-LD (أفضل جهد)"""
+    names = []
+    try:
+        for k, v in _metas(page):
+            if k in ("author", "article:author", "parsely-author", "dc.creator", "sailthru.author", "byl", "twitter:creator"):
+                v = re.sub(r"^\s*by\s+", "", _html.unescape(v), flags=re.I).strip()
+                if v and not v.startswith(("http", "@")):
+                    names += [x.strip() for x in re.split(r",|\band\b|&| و ", v) if x.strip()]
+        for mm in re.finditer(r'"author"\s*:', page):
+            chunk = page[mm.end(): mm.end() + 500].split('"publisher"')[0]
+            names += [_html.unescape(x).strip() for x in re.findall(r'"name"\s*:\s*"([^"]{3,60})"', chunk)]
+    except Exception:
+        pass
+    seen, out = set(), []
+    for n in names:
+        k = n.lower()
+        if k not in seen and 2 < len(n) < 60 and not re.search(r"https?:|\.com|staff|editor|newsroom", k):
+            seen.add(k)
+            out.append(n)
+    return out[:5]
+
+
+def _extract(content, enc=None):
+    text = content.decode(enc or "utf-8", errors="replace") if isinstance(content, bytes) else content
+    out = None
+    if trafilatura is not None:
+        data = trafilatura.extract(
+            text, output_format="json", with_metadata=True, favor_recall=True, include_comments=False
+        )
+        if data:
+            d = json.loads(data)
+            out = {"title": d.get("title") or "", "date": d.get("date") or "", "text": d.get("text") or ""}
+    if out is None:
+        ex = _SimpleExtractor()
+        ex.feed(text)
+        ex.close()
+        out = {"title": ex.title, "date": ex.date, "text": "\n".join(ex.paras)}
+    if out is not None and len(out["text"]) < 3000:  # يبدو مقطوعاً: جرّب تمريرة أوسع ثم المستخرج البسيط واختر الأطول
+        try:
+            if trafilatura is not None:
+                d2 = trafilatura.extract(text, output_format="json", with_metadata=True, favor_recall=True,
+                                         include_tables=True, include_comments=False, deduplicate=False)
+                if d2:
+                    t2 = json.loads(d2).get("text") or ""
+                    if len(t2) > len(out["text"]) * 1.15:
+                        out["text"] = t2
+        except Exception:
+            pass
+        ex = _SimpleExtractor()
+        ex.feed(text)
+        ex.close()
+        t3 = "\n".join(ex.paras)
+        if len(t3) > len(out["text"]) * 1.3:
+            out["text"] = t3
+            out["title"] = out["title"] or ex.title
+            out["date"] = out["date"] or ex.date
+    out["text"] = _drop_boiler(out["text"])
+    out["authors"] = _authors_from_html(text[:400000])
+    out["section"] = _page_meta(text[:200000])
+    words = max(1, len(out["text"].split()))
+    out["fp"] = 1000.0 * len(_FIRST_PERSON.findall(out["text"])) / words if words > 200 else 0.0
+    return out
+
+
+BROWSER_HEADERS = {
+    **UA,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9,ar;q=0.6",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+}
+_ART_CACHE, FETCH_WHY = {}, {}
+_LD_BODY = re.compile(r'"articleBody"\s*:\s*"((?:[^"\\]|\\.){80,})"', re.S)
+_META_DESC = re.compile(r'<meta[^>]+(?:property|name)=["\'](?:og:description|description|twitter:description)["\'][^>]*content=["\']([^"\']{80,})', re.I)
+
+
+def _fallback_text(html_text):
+    """عند فشل الاستخراج العادي: articleBody في JSON-LD ثم وصف الصفحة"""
+    m = _LD_BODY.search(html_text)
+    if m:
+        try:
+            return json.loads('"' + m.group(1) + '"')
+        except ValueError:
+            pass
+    m = _META_DESC.search(html_text)
+    return _html.unescape(m.group(1)) if m else ""
+
+
+
+def _clean_md(txt):
+    """ينظّف نص Markdown القادم من خدمة قراءة: يحذف الصور والروابط ويبقي الفقرات الطويلة"""
+    txt = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", txt)
+    txt = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", txt)
+    out = []
+    for ln in txt.splitlines():
+        ln = re.sub(r"^[#>*\-\s]+", "", ln).strip()
+        if len(ln) >= 45 or (out and len(ln) >= 25 and ln.endswith((".", "؟", "!", "?"))):
+            out.append(ln)
+    return "\n".join(out)
+
+
+def _via_jina(url):
+    r = requests.get("https://r.jina.ai/" + url, headers={**UA, "Accept": "text/plain", "X-Return-Format": "markdown"}, timeout=40)
+    r.raise_for_status()
+    body = r.text
+    title = (re.search(r"^Title:\s*(.+)$", body, re.M) or [None, ""])[1].strip()
+    if "Markdown Content:" in body:
+        body = body.split("Markdown Content:", 1)[1]
+    return {"title": title, "date": "", "text": _clean_md(body), "section": "", "fp": 0.0}, "خدمة قراءة بديلة (Jina)"
+
+
+def _via_wayback(url):
+    r = requests.get("https://archive.org/wayback/available", params={"url": url}, headers=UA, timeout=20)
+    snap = ((r.json().get("archived_snapshots") or {}).get("closest") or {}).get("url", "")
+    if not snap:
+        raise ValueError("لا نسخة مؤرشفة")
+    snap = re.sub(r"/web/(\d+)/", r"/web/\1id_/", snap, count=1)  # النسخة الخام بلا اضافات الارشيف
+    r2 = requests.get(snap, headers=BROWSER_HEADERS, timeout=30)
+    r2.raise_for_status()
+    return _extract(r2.content, r2.encoding or r2.apparent_encoding), "نسخة مؤرشفة (Wayback Machine)"
+
+
+def _via_gtranslate(url):
+    p = urlparse(url)
+    host = p.hostname.replace("-", "--").replace(".", "-") + ".translate.goog"
+    u = f"https://{host}{p.path or '/'}?" + (p.query + "&" if p.query else "") + "_x_tr_sl=auto&_x_tr_tl=ar&_x_tr_hl=ar&_x_tr_pto=wapp"
+    r = requests.get(u, headers=BROWSER_HEADERS, timeout=30)
+    r.raise_for_status()
+    d = _extract(r.content, r.encoding or r.apparent_encoding)
+    d["pre_ar"] = translated_ok("x", d.get("text", "")) and bool(_HAS_AR.search(d.get("text", "")[:600]))  # لا نفترض العربية: الترجمة قد تتم في المتصفح فقط
+    return d, "ترجمة جوجل للصفحة (جوجل هو اللي فتح الموقع)"
+
+
+def fetch_alternative(url, min_len=400):
+    """بدائل تقنية للمواقع المفتوحة فقط؛ لا يستخدم بروكسي/أرشيفاً لتجاوز بوابة اشتراك."""
+    if domain_match(_host(url), PAYWALLED):
+        return None, "المصدر قد يتطلب اشتراكاً؛ لا نستخدم خدمات وسيطة أو نسخاً مؤرشفة لتجاوز بوابة الدفع. ابحث عن تغطية مفتوحة بديلة."
+    errs = []
+    for fn in (_via_jina, _via_wayback, _via_gtranslate):
+        try:
+            d, how = fn(url)
+            if d and len(d.get("text", "")) >= min_len:
+                d["via"] = how
+                return d, how
+            errs.append(f"{how}: نص قصير")
+        except Exception as e:
+            errs.append(f"{fn.__name__[5:]}: {type(e).__name__}")
+    return None, " | ".join(errs)
+
+
+def fetch_article(url):
+    """يعيد dict بالنص أو None؛ سبب الفشل يُحفظ في FETCH_WHY[url]. الفشل لا يُخزَّن مؤقتاً فتصح المحاولة التالية"""
+    if url in _ART_CACHE:
+        return _ART_CACHE[url]
+    if not is_safe_url(url):
+        FETCH_WHY[url] = "رابط غير مسموح"
+        return None
+    why = ""
+    for attempt in range(2):
+        try:
+            r = requests.get(url, headers=BROWSER_HEADERS, timeout=20)
+            if r.status_code in (403, 429, 503):
+                why = f"الموقع رفض الطلب الآلي (HTTP {r.status_code})"
+                time.sleep(1.5)
+                continue
+            r.raise_for_status()
+            enc = r.encoding or r.apparent_encoding
+            d = _extract(r.content, enc)
+            if len(d["text"]) < 200:
+                html_text = r.content.decode(enc or "utf-8", errors="replace")
+                alt = _fallback_text(html_text)
+                if len(alt) > len(d["text"]):
+                    d["text"] = alt
+            if len(d["text"]) < 1500:  # مقدمة فقط (اشتراك/جافاسكربت)؟ جرّب البدائل وخذ الأطول
+                d2, how = fetch_alternative(url, min_len=max(400, len(d["text"]) * 2))
+                if d2:
+                    d, FETCH_WHY[url] = d2, f"النص المباشر قصير فجُلب كاملاً عبر: {how}"
+            if len(d["text"]) < 80:
+                FETCH_WHY[url] = "الصفحة وصلت لكن لم يُعثر فيها على نص مقال (قد تُحمَّل بالجافاسكربت)"
+                return None
+            d.setdefault("via", "الفتح المباشر من الموقع")
+            _ART_CACHE[url] = d
+            return d
+        except Exception as e:
+            why = f"تعذّر الفتح ({type(e).__name__})"
+    d2, how = fetch_alternative(url)
+    if d2:
+        FETCH_WHY[url] = f"الموقع رفض الطلب المباشر فجُلب المقال عبر: {how}"
+        _ART_CACHE[url] = d2
+        return d2
+    FETCH_WHY[url] = (why or "تعذّر الفتح") + " — وجرّبنا البدائل: " + how
+    return None
+
+
+# ───────────────────────── تصنيف وتنسيق ─────────────────────────
+
+OPINION_RE = re.compile(
+    r"/(opinion|opinions|op-ed|oped|editorial|editorials|commentary|column|columnists|blogs?|perspectives?|viewpoint)/",
+    re.I,
+)
+ANALYSIS_RE = re.compile(
+    r"/(analysis|analyses|explainer|explainers|insight|deep-dive|in-depth|long-read|analysis-and-features)/", re.I
+)
+OPINION_TITLE = re.compile(r"^(opinion|op-ed|editorial|commentary)\s*[:|\-–]", re.I)
+ANALYSIS_TITLE = re.compile(r"^(analysis|explainer)\s*[:|\-–]", re.I)
+SEC_OPINION = re.compile(r"opinion|op-ed|oped|editorial|commentary|column|perspective|viewpoint|דעות|رأي|آراء", re.I)
+SEC_ANALYSIS = re.compile(r"analysis|explainer|insight|in-depth|deep.?dive|ניתוח|פרשנות|تحليل", re.I)
+
+
+def classify(url, title):
+    """يعيد (النوع، هل التصنيف مؤكد من الرابط/العنوان)"""
+    if OPINION_RE.search(url) or OPINION_TITLE.search(title):
+        return "رأي", True
+    if ANALYSIS_RE.search(url) or ANALYSIS_TITLE.search(title):
+        return "تحليل", True
+    return "خبر", False
+
+
+def classify_section(sec):
+    if not sec:
+        return None
+    if SEC_OPINION.search(sec):
+        return "رأي"
+    if SEC_ANALYSIS.search(sec):
+        return "تحليل"
+    return "خبر"
+
+
+def fmt_seen(seen):
+    try:
+        dt = datetime.strptime(seen, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc).astimezone(TZ)
+        return dt.strftime("%Y-%m-%d  %H:%M")
+    except Exception:
+        return seen or "-"
+
+
+# ───────────────────────── بناء الاستعلام ─────────────────────────
+
+STOP = {
+    "en": {"the", "a", "an", "of", "in", "on", "at", "to", "for", "and", "or", "by", "with", "from", "is", "are"},
+    "iw": {"של", "את", "על", "עם", "אל", "מן", "כי", "גם", "או"},
+    "fr": {"de", "du", "des", "la", "le", "les", "et", "en", "un", "une", "au", "aux", "pour", "d", "l"},
+    "es": {"de", "del", "la", "el", "los", "las", "y", "en", "un", "una", "para", "por", "al"},
+    "pt": {"de", "do", "da", "dos", "das", "o", "a", "os", "as", "e", "em", "um", "uma", "para", "por"},
+}
+CJK = {"zh", "ko"}
+_CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]")
+GT_CODE = {"zh": "zh-CN"}
+
+# اللغات المتاحة في تاب الترجمة: (رمز داخلي، اسمها بالعربية، رمز GDELT sourcelang، افتراضياً مفعّلة)
+LANGS = [
+    ("en", "الإنجليزية", "eng", True),
+    ("iw", "العبرية", "heb", True),
+    ("fr", "الفرنسية", "french", False),
+    ("es", "الإسبانية", "spanish", False),
+    ("pt", "البرتغالية", "portuguese", False),
+    ("hi", "الهندية", "hindi", False),
+    ("zh", "الصينية", "chinese", False),
+    ("ko", "الكورية", "korean", False),
+    ("ar", "العربية (صحف عربية)", "arabic", False),
+    ("tr", "التركية", "turkish", False),
+    ("fa", "الفارسية", "persian", False),
+    ("am", "الأمهرية (إثيوبيا)", "amharic", False),
+]
+LANG_NAME_AR = {"en": "الإنجليزية", "iw": "العبرية", "ar": "العربية", "tr": "التركية", "fa": "الفارسية", "am": "الأمهرية",
+                "fr": "الفرنسية", "es": "الإسبانية", "pt": "البرتغالية", "hi": "الهندية", "zh": "الصينية", "ko": "الكورية"}
+
+
+def _minlen(code, default):
+    return 1 if code in CJK else default
+
+
+def translate_terms(terms, code):
+    """يترجم كل عبارة من العربية؛ يعيد (قائمة الترجمات، هل نجحت كلها)"""
+    out, ok = [], True
+    if code == "ar":
+        return [t for t in terms if t.strip()], bool(terms)
+    for t in terms:
+        x = tr(t, "ar", GT_CODE.get(code, code))
+        if _HAS_AR.search(x):
+            ok = False
+            continue
+        out.append(x)
+    return out, ok and bool(out)
+MATCH_MODES = ["كلمات متقاربة (Near)", "عبارة دقيقة (Exact)", "كل الكلمات (AND)"]
+
+
+def clean_words(x, code, min_len):
+    x = re.sub(r"[\"“”„()\[\]{}:;!?,،.]", " ", x)
+    out = []
+    for w in x.split():
+        w = re.sub(r"['’]s$", "", w)
+        if w.lower() in STOP.get(code, ()):
+            continue
+        if len(w) < min_len:
+            continue
+        out.append(w)
+    return out
+
+
+_AC_PATTERNS = [
+    (re.compile(r"(?<![\w\u0600-\u06FF])(?:سوخوي|سوخوى|سو)\s*[-‐]?\s*(\d{2})\b"), "Su",
+     lambda n: [f"Su-{n}", f"Su{n}", f"Su {n}", f"סו-{n}", f"סוחוי {n}", f"Sukhoi {n}", f"سو-{n}", f"سوخوي {n}"]),
+    (re.compile(r"(?<![\w\u0600-\u06FF])(?:اف|إف|أف|f)\s*[-‐]?\s*(\d{1,2})\b", re.I), "F",
+     lambda n: [f"F-{n}", f"F{n}", f"F {n}", f"אף-{n}", f"אף {n}", f"إف-{n}", f"إف {n}"]),
+]
+
+
+def term_extras(term, code):
+    """صيغ كتابة بديلة لأسماء الطائرات (Su-35 / F-16): تُكتب بحروف لاتينية أو بأشكال مختلفة في العناوين"""
+    out = []
+    for rx, _k, mk in _AC_PATTERNS:
+        m = rx.search(term or "")
+        if not m:
+            continue
+        for v in mk(m.group(1)):
+            heb = bool(re.search(r"[\u0590-\u05FF]", v))
+            ar = bool(_HAS_AR.search(v))
+            if (heb and code != "iw") or (ar and code != "ar"):
+                continue
+            if v not in out:
+                out.append(v)
+    return out
+
+
+def _tidy_term(t):
+    return " ".join(re.sub(r"[()\[\]{}\"“”„«»]", " ", t or "").split())
+
+
+def build_term(term, code, match, pre=False):
+    base = _build_term(term, code, match, pre)
+    extras = [] if pre else term_extras(term, code)
+    if base and extras:
+        alts = [f'"{v}"' for v in extras if f'"{v}"' != base]
+        return "(" + " OR ".join([base] + alts) + ")"
+    return base
+
+
+def _build_term(term, code, match, pre=False):
+    if not pre:
+        term = _tidy_term(term) or term
+    x = term if pre else tr(term, "ar", GT_CODE.get(code, code))
+    if not pre and code != "ar" and _HAS_AR.search(x):
+        raise TranslationError(f"تعذّرت ترجمة «{term}» إلى {LANG_NAME_AR.get(code, code)}")
+    if "Exact" in match:
+        words = clean_words(x, code, 1)
+        if not words:
+            return ""
+        return words[0] if len(words) == 1 and len(words[0]) >= 3 else '"' + " ".join(words) + '"'
+    if "Near" in match:
+        words = clean_words(x, code, 1)
+        if not words:
+            return ""
+        if len(words) == 1:
+            return words[0] if len(words[0]) >= 3 else '"' + words[0] + '"'
+        return 'near15:"' + " ".join(words) + '"'
+    words = clean_words(x, code, _minlen(code, 3))  # AND
+    return " ".join(f'"{w}"' if len(w) < 3 else w for w in words)
+
+
+def build_query(terms, code, joiner, match, pre=False):
+    parts = [p for p in (build_term(t, code, match, pre) for t in terms) if p]
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    if joiner == "OR":
+        return "(" + " OR ".join(parts) + ")"
+    return " ".join(parts)
+
+
+def domain_expr(domains):
+    ds = []
+    for d in domains:
+        ds += [x for x in d.split("|") if x]
+    expr = " OR ".join(f"domain:{d}" for d in ds)
+    return f"({expr})" if len(ds) > 1 else expr
+
+
+def _split_domains(ds):
+    out = []
+    for d in ds:
+        out += [x for x in d.split("|") if x]
+    return out
+
+
+def domain_match(dom, doms):
+    dom = (dom or "").lower().replace("www.", "")
+    return any(dom == d or dom.endswith("." + d) for d in doms)
+
+
+# رمز لغة المصدر في القوائم ← (رمز الترجمة، اسم لغة GDELT). "both" = عبري + إنجليزي. يجوز الجمع: "tr,en"
+LANG_MAP = {"he": ("iw", "heb"), "en": ("en", "eng"), "ar": ("ar", "arabic"), "tr": ("tr", "turkish"),
+            "fa": ("fa", "persian"), "am": ("am", "amharic"), "fr": ("fr", "french"),
+            "es": ("es", "spanish"), "pt": ("pt", "portuguese"), "hi": ("hi", "hindi"),
+            "zh": ("zh", "chinese"), "ko": ("ko", "korean")}
+LANG_ORDER = ["he", "en", "ar", "tr", "fa", "am", "fr", "es", "pt", "hi", "zh", "ko"]
+
+
+def entry_langs(lang):
+    out = []
+    for x in (lang or "").replace("both", "he,en").split(","):
+        x = x.strip()
+        if x in LANG_MAP and x not in out:
+            out.append(x)
+    return out
+
+
+def codes_for(selected):
+    """رموز الترجمة للغات المصادر المختارة (لمطابقة الكلمات داخل النص)"""
+    have = {l for _, _, lg in selected for l in entry_langs(lg)}
+    return [LANG_MAP[l][0] for l in LANG_ORDER if l in have] or ["en", "iw"]
+
+
+def jobs_for_sources(selected, country=None):
+    """selected: قائمة (label, domains, lang). country: رمز بلد GDELT يُستخدم كخطة بديلة إن فشل فلتر الدومين"""
+    jobs = []
+    for l in LANG_ORDER:
+        doms = _split_domains([d for _, d, lg in selected if l in entry_langs(lg)])
+        if doms:
+            code, gl = LANG_MAP[l]
+            jobs.append({"code": code, "extra": domain_expr(doms), "domains": doms, "country": country, "lang": gl})
+    return jobs
+
+
+GLOBAL_SCOPES = {
+    "جميع المصادر": [
+        {"code": "en", "extra": "sourcelang:eng"},
+        {"code": "iw", "extra": "sourcelang:heb"},
+    ],
+    "مصادر أمريكية فقط": [{"code": "en", "extra": "sourcecountry:US sourcelang:eng"}],
+    "مصادر إسرائيلية فقط": [
+        {"code": "en", "extra": "sourcecountry:IS sourcelang:eng"},
+        {"code": "iw", "extra": "sourcecountry:IS sourcelang:heb"},
+    ],
+    "مصادر بريطانية فقط": [{"code": "en", "extra": "sourcecountry:UK sourcelang:eng"}],
+}
+
+
+def gdelt_call(query, start_utc, end_utc, max_rec, timespan=None):
+    params = {
+        "query": query,
+        "mode": "ArtList",
+        "format": "json",
+        "maxrecords": max_rec,
+        "sort": "DateDesc",
+        "startdatetime": start_utc.strftime("%Y%m%d%H%M%S"),
+        "enddatetime": end_utc.strftime("%Y%m%d%H%M%S"),
+    }
+    if timespan:  # صيغة بديلة: نافذة نسبية بدل تواريخ محددة
+        params.pop("startdatetime"), params.pop("enddatetime")
+        params["timespan"] = timespan
+    last_err = ""
+    for _ in range(3):
+        try:
+            r = requests.get(GDELT_URL, params=params, timeout=40)
+            if r.status_code == 429 or "limit requests" in r.text.lower():
+                time.sleep(6)
+                continue
+            try:
+                return r.json().get("articles", []), ""
+            except ValueError:
+                last_err = r.text.strip()[:200] or f"HTTP {r.status_code}"
+                if "too short" in last_err.lower() or "too common" in last_err.lower():
+                    break
+                time.sleep(3)
+        except requests.RequestException as e:
+            last_err = str(e)
+            time.sleep(3)
+    return [], last_err
+
+
+def search_iter(terms, joiner, match, jobs, start_utc, end_utc, max_rec, ctype):
+    """مولّد: يُخرج حالة بعد كل طلب وأثناء الانتظار، فتُعرض النتائج أولاً بأول ويمكن إيقاف البحث في أي لحظة."""
+    n = min(250, max_rec * 3) if ctype != "الكل" else min(250, max_rec)
+    found, errors, used = {}, [], []
+    last = {"t": 0.0}
+
+    def snapshot():
+        items = []
+        for a in found.values():
+            if "ctype" not in a:
+                a["ctype"], a["ctype_sure"] = classify(a.get("url", ""), a.get("title", ""))
+            if ctype == "الكل" or a["ctype"] == ctype:
+                items.append(a)
+        items.sort(key=lambda a: a.get("seendate", ""), reverse=True)
+        return items[:max_rec]
+
+    def ev(msg, items=None):
+        return {"msg": msg, "items": items, "errors": errors, "used": used}
+
+    def call(full, label="", count=n):
+        wait = 5.1 - (time.time() - last["t"])  # حد GDELT: طلب كل 5 ثوانٍ (من بداية الطلب السابق)
+        while wait > 0:
+            yield ev(f"انتظار حدّ الطلبات في GDELT ({int(wait) + 1}ث)…")
+            step = min(0.7, wait)
+            time.sleep(step)
+            wait -= step
+        used.append(label + full)
+        yield ev(f"جارٍ البحث: {full[:140]}")
+        last["t"] = time.time()
+        arts, err = gdelt_call(full, start_utc, end_utc, count)
+        used[-1] += f"   ⟵ {len(arts)} نتيجة"
+        if not arts and not err and label == "":
+            # ردّ فارغ بلا خطأ: أعد المحاولة مرة بنافذة زمنية نسبية (أحياناً يتأخر GDELT في فهرسة آخر دقائق)
+            hrs = int((end_utc - start_utc).total_seconds() // 3600) + 1
+            span = f"{hrs}h" if hrs <= 72 else f"{-(-hrs // 24)}d"
+            wait = 5.1 - (time.time() - last["t"])
+            while wait > 0:
+                yield ev(f"إعادة المحاولة بنافذة {span} ({int(wait) + 1}ث)…")
+                step = min(0.7, wait)
+                time.sleep(step)
+                wait -= step
+            used.append(f"↳ timespan={span}: {full}")
+            yield ev("إعادة المحاولة بنافذة زمنية نسبية…")
+            last["t"] = time.time()
+            arts, err = gdelt_call(full, start_utc, end_utc, count, timespan=span)
+            used[-1] += f"   ⟵ {len(arts)} نتيجة"
+        if err:
+            errors.append(f"{full[:160]}: {err}")
+        return arts
+
+    def take(arts):
+        for a in arts:
+            found.setdefault(a.get("url"), a)
+        return ev(f"وصلت {len(arts)} نتيجة", snapshot())
+
+    for job in jobs:
+        try:
+            q = build_query(job.get("terms") or terms, job["code"], joiner, match, pre=bool(job.get("terms")))
+        except TranslationError as e:
+            errors.append(f"{e} — أعد المحاولة بعد لحظات.")
+            yield ev("تعذّرت ترجمة إحدى اللغات")
+            continue
+        if not q:
+            continue
+        doms = job.get("domains")
+        if not doms:
+            arts = yield from call(f"{q} {job['extra']}".strip())
+            yield take(arts)
+            continue
+        got = []
+        if len(doms) > 6:  # قائمة دومينات طويلة ترفضها GDELT («query too long»): نبدأ بدفعات من 5 مباشرة
+            for i in range(0, min(len(doms), 40), 5):
+                arts = yield from call(f"{q} {domain_expr(doms[i:i + 5])}", "↳ دفعة: ")
+                got += arts
+                yield take(arts)
+        else:
+            arts = yield from call(f"{q} {job['extra']}")
+            got = list(arts)
+            yield take(arts)
+        if not got:  # خطة بديلة 1: دفعات أصغر من المواقع
+            for i in range(0, min(len(doms), 32), 4):
+                arts = yield from call(f"{q} {domain_expr(doms[i:i + 4])}", "↳ دفعة: ")
+                got += arts
+                yield take(arts)
+        if not got and job.get("country"):  # خطة بديلة 2: فلتر البلد/اللغة ثم تصفية المواقع محلياً
+            arts = yield from call(f"{q} sourcecountry:{job['country']} sourcelang:{job['lang']}", "↳ بلد: ", 250)
+            yield take([a for a in arts if domain_match(a.get("domain", ""), doms)])
+    yield ev("تم", snapshot())
+
+
+def run_search(terms, joiner, match, jobs, start_utc, end_utc, max_rec, ctype, progress=None):
+    last = None
+    for e in search_iter(terms, joiner, match, jobs, start_utc, end_utc, max_rec, ctype):
+        if progress:
+            progress(e["msg"])
+        last = e
+    return (last["items"] or []), last["errors"], last["used"]
+
+
+def _batch_tr(texts, dest, size=12):
+    """يترجم عدة عناوين بطلب واحد لكل دفعة (يوفّر الطلبات فلا يحجبنا جوجل). يعيد قائمة بنفس الترتيب، والفاشل يبقى كما هو"""
+    out = list(texts)
+    for i in range(0, len(texts), size):
+        chunk = [" ".join(t.split()) for t in texts[i:i + size]]
+        res = tr("\n".join(chunk), "auto", dest).split("\n")
+        if len(res) == len(chunk):
+            for j, r in enumerate(res):
+                if r.strip():
+                    out[i + j] = r.strip()
+        else:  # اختلف عدد الأسطر: ترجمة فردية متتابعة
+            for j, t in enumerate(chunk):
+                out[i + j] = tr(t, "auto", dest)
+    return out
+
+
+def translate_titles(items):
+    """يضيف title_ar وtitle_en وcountry_ar. دفعات أولاً ثم إعادة محاولة هادئة لما لم يُترجم"""
+    items = list(items)
+    if not items:
+        return items
+    titles = [a.get("title", "") for a in items]
+    ar = _batch_tr(titles, "ar")
+    for _ in range(2):  # إعادة محاولة بطيئة لما بقي كما هو (غير عربي أصلاً)
+        bad = [i for i, a in enumerate(items) if ar[i] == titles[i] and not _HAS_AR.search(titles[i]) and titles[i].strip()]
+        if not bad:
+            break
+        time.sleep(1.5)
+        for i in bad:
+            ar[i] = tr(titles[i], "auto", "ar")
+    foreign = [i for i, a in enumerate(items) if a.get("language", "").lower() != "english"]
+    en = {i: titles[i] for i in range(len(items))}
+    if foreign:
+        for i, v in zip(foreign, _batch_tr([titles[i] for i in foreign], "en")):
+            en[i] = v
+    cache = {}
+    for i, a in enumerate(items):
+        a["title_ar"], a["title_en"] = ar[i], en[i]
+        sc = a.get("sourcecountry", "")
+        if sc:
+            if sc not in cache:
+                cache[sc] = tr(sc, "en", "ar")
+            a["country_ar"] = cache[sc]
+        else:
+            a["country_ar"] = ""
+    return items
+
+
+# ───────────────────────── التحقق من نص المقال ─────────────────────────
+
+
+def _stem(w, code):
+    w = w.lower()
+    if _CJK_RE.search(w):
+        return w[:2]
+    if code == "iw" and len(w) > 3 and w[0] == "ה":
+        w = w[1:]
+    if code == "ar" and len(w) > 4 and w.startswith("ال"):
+        w = w[2:]
+    w = w.replace("\u0307", "")
+    return w[:5] if len(w) > 5 else w
+
+
+def make_matchers(terms, codes):
+    """لكل عبارة: قائمة بدائل (واحد لكل لغة) من جذور الكلمات"""
+    out = []
+    for t in terms:
+        alts = []
+        for code in dict.fromkeys(codes):
+            words = clean_words(tr(t, "ar", GT_CODE.get(code, code)), code, _minlen(code, 3))
+            stems = [_stem(w, code) for w in words]
+            if stems:
+                alts.append(stems)
+            for v in term_extras(t, code):  # صيغ بديلة بلا مسافات (Su-35 / F-16 ...)
+                if " " not in v:
+                    alts.append([v.lower()])
+        if alts:
+            out.append(alts)
+    return out
+
+
+def make_matchers_pre(jobs):
+    """مطابِقات من ترجمات جاهزة: لكل رقم عبارة قائمة بدائل (واحد لكل لغة)"""
+    n = max((len(j.get("terms") or []) for j in jobs), default=0)
+    out = []
+    for i in range(n):
+        alts = []
+        for j in jobs:
+            terms = j.get("terms") or []
+            if i < len(terms):
+                code = j["code"]
+                stems = [_stem(w, code) for w in clean_words(terms[i], code, _minlen(code, 3))]
+                if stems:
+                    alts.append(stems)
+        if alts:
+            out.append(alts)
+    return out
+
+
+def find_mentions(text, matchers, joiner="AND", maxn=2):
+    low = text.lower().replace("\u0307", "")
+    ok = [any(all(st in low for st in stems) for stems in alts) for alts in matchers]
+    found = bool(ok) and (all(ok) if joiner == "AND" else any(ok))
+    flat = [stems for alts in matchers for stems in alts]
+    scored = []
+    for i, sent in enumerate(re.split(r"(?<=[.!?])\s+|\n+", text)):
+        sent = sent.strip()
+        if len(sent) < 25:
+            continue
+        sl = sent.lower()
+        sc = max((sum(st in sl for st in m) / len(m) for m in flat), default=0)
+        if sc > 0:
+            scored.append((-sc, i, sent[:400]))
+    scored.sort()
+    top = sorted(scored[:maxn], key=lambda x: x[1])
+    return found, [x[2] for x in top]
+
+
+def count_mentions(text, matchers):
+    """عدد مرات ورود كلمات البحث في النص (جذور الكلمات؛ لكل عبارة أفضل صيغة ثم المجموع) وعدد كلمات النص"""
+    low = (text or "").lower().replace("\u0307", "")
+    total = 0
+    for alts in matchers:
+        total += max((min(low.count(s) for s in stems) for stems in alts if stems), default=0)
+    return total, len(low.split())
+
+
+def mention_level(count, words, in_title=False):
+    dens = 1000.0 * count / max(1, words)
+    if in_title or count >= 8 or dens >= 6:
+        return "محوري"
+    if count >= 3 or dens >= 2.5:
+        return "ملحوظ"
+    return "عابر"
+
+
+def enrich_items(items, matchers, joiner="AND", limit=40, workers=8):
+    """يجلب نص المقالات بالتوازي ويضيف: found / snips / snip_ar، ويحسّن تصنيف النوع"""
+
+    def work(a):
+        art = fetch_article(a.get("url", ""))
+        a["checked"] = True
+        if not art:
+            a["fetched"] = False
+            return a
+        a["fetched"] = True
+        a["found"], snips = find_mentions(art["text"], matchers, joiner)
+        a["snips"] = snips
+        a["mcount"], a["words"] = count_mentions(art["text"], matchers)
+        a["mlevel"] = mention_level(a["mcount"], a["words"], find_mentions(a.get("title", ""), matchers, "OR")[0])
+        a["snip_ar"] = tr(" ".join(snips), "auto", "ar") if snips else ""
+        sec = classify_section(art.get("section", ""))
+        if sec:
+            a["ctype"], a["ctype_sure"] = sec, True
+        elif not a.get("ctype_sure") and art.get("fp", 0) > 6:
+            a["ctype"] = "رأي"
+        return a
+
+    head = items[:limit]
+    with ThreadPoolExecutor(workers) as ex:
+        list(ex.map(work, head))
+    return items
+
+
+# ───────────────────────── كتّاب ومحللون (RSS + أخبار Google) ─────────────────────────
+
+_DC = "{http://purl.org/dc/elements/1.1/}"
+_ATOM = "{http://www.w3.org/2005/Atom}"
+COUNTRY_EN = {"US": "United States", "UK": "United Kingdom", "IL": "Israel", "SA": "Saudi Arabia", "GCC": "Gulf", "EG": "Egypt", "AR": "Arab world",
+              "FR": "France", "ES": "Spain", "BR": "Brazil", "IN": "India", "CN": "China", "KR": "South Korea",
+              "TR": "Turkey", "IR": "Iran", "ET": "Ethiopia", "DE": "Germany", "JP": "Japan", "RU": "Russia",
+              "SO": "Somalia", "YE": "Yemen", "IQ": "Iraq", "LB": "Lebanon", "SY": "Syria", "JO": "Jordan",
+              "SD": "Sudan", "QA": "Qatar", "OM": "Oman", "KW": "Kuwait", "BH": "Bahrain", "AE": "United Arab Emirates",
+              "PS": "Palestine", "DJ": "Djibouti", "ER": "Eritrea", "LY": "Libya", "KE": "Kenya"}
+
+
+def _to_utc(s):
+    if not s:
+        return None
+    s = s.strip()
+    try:
+        dt = email.utils.parsedate_to_datetime(s)
+    except Exception:
+        try:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        except Exception:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def parse_feed(content):
+    root = ET.fromstring(content)
+    out = []
+    for it in root.iter("item"):
+        src = it.find("source")
+        out.append(
+            {
+                "title": (it.findtext("title") or "").strip(),
+                "link": (it.findtext("link") or "").strip(),
+                "date": _to_utc(it.findtext("pubDate") or it.findtext(_DC + "date")),
+                "source_url": (src.get("url") or "") if src is not None else "",
+                "source_name": ((src.text or "").strip()) if src is not None else "",
+            }
+        )
+    for en in root.iter(_ATOM + "entry"):
+        ln = en.find(_ATOM + "link")
+        out.append(
+            {
+                "title": (en.findtext(_ATOM + "title") or "").strip(),
+                "link": (ln.get("href") if ln is not None else "") or "",
+                "date": _to_utc(en.findtext(_ATOM + "published") or en.findtext(_ATOM + "updated")),
+                "source_url": "",
+                "source_name": "",
+            }
+        )
+    return out
+
+
+def _get_feed(url):
+    r = requests.get(url, headers=UA, timeout=20)
+    r.raise_for_status()
+    if len(r.content) > 5_000_000:
+        raise ValueError("الخلاصة كبيرة جداً")
+    return parse_feed(r.content)
+
+
+def gnews_url(q, hl, gl, ceid):
+    return f"https://news.google.com/rss/search?q={quote(q)}&hl={hl}&gl={gl}&ceid={quote(ceid)}"
+
+
+def decode_gnews(url):
+    """يفك رابط أخبار Google إلى الرابط الأصلي (أفضل جهد؛ يعيد الرابط كما هو عند الفشل)"""
+    try:
+        p = urlparse(url)
+        if p.netloc != "news.google.com":
+            return url
+        gid = p.path.rstrip("/").split("/")[-1]
+        raw = base64.urlsafe_b64decode(gid + "=" * (-len(gid) % 4))
+        if raw.startswith(b"\x08\x13\x22"):
+            raw = raw[3:]
+            if raw.endswith(b"\xd2\x01\x00"):
+                raw = raw[:-3]
+            n, start = raw[0], 1
+            if n >= 0x80:
+                n, start = (n & 0x7F) | (raw[1] << 7), 2
+            direct = raw[start : start + n].decode("utf-8", "ignore")
+            if direct.startswith("http"):
+                return direct
+        page = ""
+        for base in ("https://news.google.com/rss/articles/", "https://news.google.com/articles/"):
+            page = requests.get(base + gid, headers=UA, timeout=15).text
+            sg = re.search(r'data-n-a-sg="([^"]+)"', page)
+            ts = re.search(r'data-n-a-ts="([^"]+)"', page)
+            if sg and ts:
+                break
+        else:
+            return _gn_redirect(url)
+        inner = (
+            '["garturlreq",[["X","X",["X","X"],null,null,1,1,"US:en",null,1,null,null,null,null,null,0,1],'
+            f'"X","X",1,[1,1,1],1,1,null,0,0,null,0],"{gid}",{ts.group(1)},"{sg.group(1)}"]'
+        )
+        payload = "f.req=" + quote(json.dumps([[["Fbv4je", inner]]]))
+        r = requests.post(
+            "https://news.google.com/_/DotsSplashUi/data/batchexecute",
+            headers={"content-type": "application/x-www-form-urlencoded;charset=UTF-8", "user-agent": UA["User-Agent"]},
+            data=payload,
+            timeout=15,
+        )
+        parsed = json.loads(r.text.split("\n\n")[1])[:-2]
+        out = json.loads(parsed[0][2])[1]
+        return out if str(out).startswith("http") else _gn_redirect(url)
+    except Exception:
+        return _gn_redirect(url)
+
+
+def _gn_redirect(url):
+    """بديل لفك رابط جوجل: متابعة التحويل كأنه متصفح (مع موافقة الكوكيز)، او قراءة الرابط من الصفحة"""
+    try:
+        r = requests.get(url, headers=BROWSER_HEADERS, cookies={"CONSENT": "YES+cb.20240101-00-p0.en+FX+000"}, allow_redirects=True, timeout=15)
+        if _host(r.url) not in ("news.google.com", "consent.google.com", ""):
+            return r.url
+        m = re.search(r'data-n-au="(https?://[^"]+)"', r.text) or re.search(r'<a[^>]+href="(https?://(?!news\.google|consent\.google|www\.google)[^"]+)"[^>]*jsname', r.text)
+        if m:
+            return _html.unescape(m.group(1))
+    except Exception:
+        pass
+    return url
+
+
+def _host(u):
+    h = (urlparse(u).hostname or "").lower()
+    return h[4:] if h.startswith("www.") else h
+
+
+NITTER = ["nitter.net", "xcancel.com", "nitter.poast.org", "nitter.privacydev.net", "nitter.tiekoetter.com", "nitter.space"]
+
+
+def twitter_handle(x):
+    """يستخرج اسم الحساب من @name أو رابط تويتر/X"""
+    x = (x or "").strip()
+    m = re.search(r"(?:twitter\.com|x\.com)/(?:#!/)?@?([A-Za-z0-9_]{1,15})", x)
+    if m:
+        return m.group(1)
+    m = re.match(r"^@?([A-Za-z0-9_]{1,15})$", x)
+    return m.group(1) if m else ""
+
+
+def fetch_twitter(handle, days):
+    """أحدث تغريدات حساب بلا حساب ولا مفتاح: عبر خلاصات Nitter العامة، ثم بالمعاينة المضمّنة. يعيد (entries, ملاحظة)"""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    errs = []
+    for inst in NITTER:
+        try:
+            r = requests.get(f"https://{inst}/{handle}/rss", headers=UA, timeout=12)
+            r.raise_for_status()
+            out = []
+            for e in parse_feed(r.content):
+                if not e["date"] or e["date"] < cutoff:
+                    continue
+                sid = re.search(r"/status/(\d+)", e["link"] or "")
+                if not sid:
+                    continue
+                out.append({"title": e["title"], "link": f"https://x.com/{handle}/status/{sid.group(1)}", "date": e["date"],
+                            "source_url": "https://x.com", "source_name": "X"})
+            return out, f"تويتر @{handle} ⟵ {len(out)} تغريدة (عبر {inst})"
+        except Exception as ex:
+            errs.append(f"{inst}:{type(ex).__name__}")
+    try:
+        r = requests.get(f"https://syndication.twitter.com/srv/timeline-profile/screen-name/{handle}", headers=BROWSER_HEADERS, timeout=15)
+        r.raise_for_status()
+        m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', r.text, re.S)
+        data = json.loads(m.group(1))
+        out = []
+        for en in data["props"]["pageProps"]["timeline"]["entries"]:
+            t = (en.get("content") or {}).get("tweet") or {}
+            if not t.get("id_str"):
+                continue
+            dt = datetime.strptime(t["created_at"], "%a %b %d %H:%M:%S %z %Y").astimezone(timezone.utc)
+            if dt >= cutoff:
+                out.append({"title": _html.unescape(t.get("full_text") or t.get("text") or ""), "link": f"https://x.com/{handle}/status/{t['id_str']}",
+                            "date": dt, "source_url": "https://x.com", "source_name": "X"})
+        return out, f"تويتر @{handle} ⟵ {len(out)} تغريدة (عبر المعاينة المضمّنة)"
+    except Exception as ex:
+        errs.append(f"syndication:{type(ex).__name__}")
+    return [], f"تويتر @{handle} ⟵ تعذّر جلب التغريدات (تويتر يحجب الأدوات الآلية): " + " | ".join(errs)
+
+
+def fetch_writer(w, days):
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    items, notes = [], []
+
+    def add(e, how, lang):
+        if not e["link"] or not e["title"] or not e["date"] or e["date"] < cutoff:
+            return
+        title = e["title"]
+        if e["source_name"] and title.endswith(" - " + e["source_name"]):
+            title = title[: -len(e["source_name"]) - 3]
+        items.append(
+            {
+                "url": e["link"], "title": title, "seendate": e["date"].strftime("%Y%m%dT%H%M%SZ"),
+                "domain": _host(e["source_url"]) or _host(e["link"]),
+                "sourcecountry": COUNTRY_EN.get(w["country"], ""), "language": lang,
+                "writer": w["name_ar"], "writer_en": w["name_en"], "outlet": w["outlet"], "wsrc": how,
+            }
+        )
+
+    if w.get("twitter"):
+        tl, tnote = fetch_twitter(w["twitter"], days)
+        for e in tl:
+            add(e, "tweet", "Arabic")
+        notes.append(f"{w['name_en']} ⟵ {tnote}")
+    for f in w["feeds"]:
+        try:
+            got = _get_feed(f)
+            before = len(items)
+            for e in got:
+                add(e, "feed", "English")
+            notes.append(f"{w['name_en']} ⟵ صفحة الكاتب: {len(items) - before} مقال")
+        except Exception as ex:
+            notes.append(f"{w['name_en']} ⟵ صفحة الكاتب تعذّر جلبها ({type(ex).__name__})")
+    for g in w["gn"]:
+        q = g["q"] + f" when:{max(1, days)}d"
+        try:
+            got = _get_feed(gnews_url(q, g["hl"], g["gl"], g["ceid"]))
+            before = len(items)
+            for e in got:
+                add(e, "search", g["lang"])
+            notes.append(f"{w['name_en']} ⟵ بحث: {q[:110]} ⟵ {len(items) - before}")
+        except Exception as ex:
+            notes.append(f"{w['name_en']} ⟵ البحث تعذّر ({type(ex).__name__})")
+    return items, notes
+
+
+def fetch_writers(writers, days, workers=6):
+    all_items, notes = [], []
+    with ThreadPoolExecutor(workers) as ex:
+        for items, nt in ex.map(lambda w: fetch_writer(w, days), writers):
+            all_items += items
+            notes += nt
+    seen, uniq = set(), []
+    for a in sorted(all_items, key=lambda a: (a["wsrc"] != "feed", a["seendate"]), reverse=False):
+        key = (a["writer"], re.sub(r"\W+", "", a["title"].lower())[:80])
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(a)
+
+    def dec(a):
+        if "news.google.com" in a["url"]:
+            real = decode_gnews(a["url"])
+            if real != a["url"]:
+                a["url"], a["domain"] = real, _host(real)
+        return a
+
+    with ThreadPoolExecutor(workers) as ex:
+        list(ex.map(dec, uniq[:120]))
+    for a in uniq:
+        kind = next((w["kind"] for w in writers if w["name_ar"] == a["writer"]), "رأي")
+        ct, sure = classify(a["url"], a["title"])
+        a["ctype"], a["ctype_sure"] = (ct, True) if sure else (kind, False)
+    uniq.sort(key=lambda a: a["seendate"], reverse=True)
+    return uniq, notes
+
+
+# ───────────────────────── بحث داخل مصادر محددة / باسم كاتب (عبر أخبار Google) ─────────────────────────
+
+_GN_LOC = {
+    "en": {"US": ("en-US", "US", "US:en"), "UK": ("en-GB", "GB", "GB:en"), "IL": ("en-IL", "IL", "IL:en")},
+    "he": {"IL": ("iw", "IL", "IL:he")},
+    "ar": {"EG": ("ar", "EG", "EG:ar")},
+    "tr": {"TR": ("tr", "TR", "TR:tr")},
+    "fa": {"US": ("en-US", "US", "US:en")},  # لا نسخة فارسية في أخبار Google: يُستعمل الموقع الأمريكي والبحث بالفارسية
+    "am": {"US": ("en-US", "US", "US:en")},
+    "fr": {"FR": ("fr-FR", "FR", "FR:fr")},
+    "es": {"ES": ("es-ES", "ES", "ES:es")},
+    "pt": {"BR": ("pt-BR", "BR", "BR:pt")},
+    "hi": {"IN": ("hi-IN", "IN", "IN:hi")},
+    "zh": {"CN": ("zh-CN", "CN", "CN:zh-CN")},
+    "ko": {"KR": ("ko-KR", "KR", "KR:ko")},
+}
+
+
+def _quoted(x):
+    x = re.sub(r"[\"“”„]", " ", x).strip()
+    return f'"{x}"' if " " in x else x
+
+
+def _name_tokens(name):
+    return [t.lower() for t in re.split(r"[\s\-]+", re.sub(r"[^\w\s\-]", " ", name)) if len(t) > 1]
+
+
+def check_byline(url, name_variants):
+    """هل اسم الكاتب مذكور كمؤلف في الصفحة؟ True/False، أو None إن تعذّر فتح الصفحة"""
+    if not is_safe_url(url):
+        return None
+    try:
+        r = requests.get(url, headers=UA, timeout=12)
+        r.raise_for_status()
+        page = r.text[:400000]
+    except Exception:
+        return None
+    meta = [v for k, v in _metas(page) if k in ("author", "article:author", "parsely-author", "dc.creator", "sailthru.author", "byl")]
+    for mm in re.finditer(r'"author"\s*:', page):
+        meta.append(page[mm.end() : mm.end() + 400].split('"publisher"')[0])
+    hay = _html.unescape(" ".join(meta)).lower()
+    if not hay.strip():  # لا بيانات مؤلف في الوسوم: نبحث في مطلع النص (سطر "By ...")
+        art = _extract(r.content, r.encoding or r.apparent_encoding)
+        hay = art["text"][:1500].lower()
+    for nm in name_variants:
+        toks = _name_tokens(nm)
+        if toks and all(t in hay for t in toks):
+            return True
+    return False
+
+
+def gnews_site_search(selected, days, terms=None, joiner="OR", author=None, author_he=None, country="US",
+                      verify_author=True, max_items=60):
+    """يبحث في مواقع محددة عبر أخبار Google (site:). selected: (label, domains, lang).
+    terms: كلمات عربية تُترجم؛ author/author_he: اسم الكاتب بالإنجليزية/العبرية. يعيد (items, notes)"""
+    items, notes = [], []
+    loc_c = country if country in ("US", "UK", "IL") else "US"
+    buckets = {l: _split_domains([d for _, d, lg in selected if l in entry_langs(lg)]) for l in LANG_ORDER}
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    names = [n for n in (author, author_he) if n]
+    for lang, doms in buckets.items():
+        if not doms:
+            continue
+        if lang in ("ar", "tr", "fa", "am", "fr", "es", "pt", "hi", "zh", "ko"):
+            if author or author_he:
+                continue  # البحث بالكاتب متاح حالياً للإنجليزية والعبرية فقط
+            who, code = "", LANG_MAP[lang][0]
+            loc = next(iter(_GN_LOC[lang].values()))
+        elif lang == "he":
+            who = author_he or (tr(author, "en", "iw") if author else "")
+            code, loc = "iw", _GN_LOC["he"]["IL"]
+            if who and who not in names:
+                names.append(who)
+        else:
+            who = author or (tr(author_he, "iw", "en") if author_he else "")
+            code, loc = "en", _GN_LOC["en"][loc_c]
+            if who and who not in names:
+                names.append(who)
+        tparts = []
+        for t in terms or []:
+            t = _tidy_term(t) or t
+            if code == "ar":
+                x = t if _HAS_AR.search(t) else tr(t, "en", "ar")
+            else:
+                x = t if (code == "en" and not _HAS_AR.search(t)) else tr(t, "ar" if _HAS_AR.search(t) else "en", code)
+            if x and (code in ("ar", "fa") or not _HAS_AR.search(x)):
+                ex = term_extras(t, code)
+                tparts.append("(" + " OR ".join([_quoted(x)] + [_quoted(v) for v in ex if v != x]) + ")" if ex else _quoted(x))
+        if terms and not tparts:
+            notes.append(f"تعذّرت ترجمة الكلمات إلى {LANG_NAME_AR.get(code, code)} — تخطّيتُ هذه اللغة")
+            continue
+        for i in range(0, len(doms), 8):
+            chunk = doms[i : i + 8]
+            parts = []
+            if who:
+                parts.append(_quoted(who))
+            if tparts:
+                parts.append("(" + " OR ".join(tparts) + ")" if joiner == "OR" and len(tparts) > 1 else " ".join(tparts))
+            parts.append("(" + " OR ".join(f"site:{d}" for d in chunk) + ")")
+            parts.append(f"when:{max(1, days)}d")
+            q = " ".join(parts)
+            try:
+                got = _get_feed(gnews_url(q, *loc))
+            except Exception as ex:
+                notes.append(f"Google News ⟵ تعذّر ({type(ex).__name__}): {q[:100]}")
+                continue
+            n0 = len(items)
+            for e in got:
+                if not e["link"] or not e["title"] or not e["date"] or e["date"] < cutoff:
+                    continue
+                host = _host(e["source_url"]) or _host(e["link"])
+                if e["source_url"] and not domain_match(host, [x.split("/")[0] for x in chunk]):
+                    continue
+                title = e["title"]
+                if e["source_name"] and title.endswith(" - " + e["source_name"]):
+                    title = title[: -len(e["source_name"]) - 3]
+                a = {
+                    "url": e["link"], "title": title, "seendate": e["date"].strftime("%Y%m%dT%H%M%SZ"),
+                    "domain": host, "sourcecountry": COUNTRY_EN.get(loc[1], ""),
+                    "language": {"he": "Hebrew", "ar": "Arabic", "tr": "Turkish", "fa": "Persian", "am": "Amharic",
+                                 "fr": "French", "es": "Spanish", "pt": "Portuguese", "hi": "Hindi", "zh": "Chinese", "ko": "Korean"}.get(lang, "English"),
+                }
+                if author or author_he:
+                    a.update({"writer": author or who, "writer_en": author or who,
+                              "outlet": next((l for l, d, _ in selected if domain_match(host, d.split("|"))), host),
+                              "wsrc": "search"})
+                items.append(a)
+            notes.append(f"Google News ⟵ {q[:110]} ⟵ {len(items) - n0}")
+    seen, uniq = set(), []
+    for a in sorted(items, key=lambda a: a["seendate"], reverse=True):
+        k = re.sub(r"\W+", "", a["title"].lower())[:80]
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append(a)
+    uniq = uniq[:max_items]
+
+    def dec(a):
+        if "news.google.com" in a["url"]:
+            real = decode_gnews(a["url"])
+            if real != a["url"]:
+                a["url"], a["domain"] = real, _host(real)
+        return a
+
+    with ThreadPoolExecutor(6) as ex:
+        list(ex.map(dec, uniq))
+    # الروابط التي تعذّر فكّها تبقى على news.google.com؛ نكتفي بما انحصر في المواقع المطلوبة أو لم يُعرف موقعه
+    allowed = [x.split("/")[0] for x in _split_domains([d for _, d, _ in selected])]
+    uniq = [a for a in uniq if "news.google.com" in a["domain"] or domain_match(a["domain"], allowed)]
+    for a in uniq:
+        a["ctype"], a["ctype_sure"] = classify(a["url"], a["title"])
+    if (author or author_he) and verify_author:
+        def chk(a):
+            a["byline"] = None if "news.google.com" in a["url"] else check_byline(a["url"], names)
+            return a
+        with ThreadPoolExecutor(6) as ex:
+            list(ex.map(chk, uniq[:40]))
+    return uniq, notes
+
+
+# ───────────────────────── تغطية بديلة مفتوحة لمقال مغلق ─────────────────────────
+
+PAYWALLED = (
+    "nytimes.com", "wsj.com", "ft.com", "economist.com", "washingtonpost.com", "haaretz.com", "haaretz.co.il",
+    "thetimes.co.uk", "thetimes.com", "telegraph.co.uk", "bloomberg.com", "reuters.com", "foreignaffairs.com",
+    "newyorker.com", "theatlantic.com", "wired.com", "tacticalreport.com", "janes.com", "africa-confidential.com",
+    "africaintelligence.com", "iiss.org", "foreignpolicy.com", "politico.com", "scmp.com", "asia.nikkei.com", "globes.co.il",
+    "calcalist.co.il", "ynet.co.il", "ynetnews.com", "maariv.co.il", "israelhayom.com", "israelhayom.co.il", "jpost.com",
+    "timesofisrael.com", "spiegel.de", "lemonde.fr", "politico.eu",
+)
+
+
+def title_from_url(url):
+    slug = urlparse(url).path.rstrip("/").split("/")[-1]
+    slug = re.sub(r"\.(html?|php)$", "", slug)
+    slug = re.sub(r"-?\d{4}-\d{2}-\d{2}$", "", slug)
+    return " ".join(w for w in re.split(r"[-_]+", slug) if not w.isdigit())
+
+
+def find_alternatives(title, exclude_domain="", days=10, want=6):
+    """يبحث عن تغطية للموضوع نفسه في مواقع مفتوحة (غير مدفوعة) ويُبقي ما يُستخرج نصه كاملاً. يعيد (items, ملاحظة)"""
+    q = re.sub(r"\s+[-|–]\s+[^-|–]{2,40}$", "", (title or "").strip())[:140]
+    if len(q) < 8:
+        return [], "لا يوجد عنوان كافٍ للبحث عن بدائل."
+    loc = _GN_LOC["he"]["IL"] if _HEB.search(q) else _GN_LOC["en"]["US"]
+    try:
+        got = _get_feed(gnews_url(f"{q} when:{days}d", *loc))
+    except Exception as e:
+        return [], f"تعذّر البحث عن بدائل ({type(e).__name__})."
+    skip = list(PAYWALLED) + ([exclude_domain] if exclude_domain else [])
+    cands, seen = [], set()
+    for e in got[:30]:
+        host = _host(e["source_url"]) or ""
+        if host and domain_match(host, skip):
+            continue
+        t = e["title"]
+        if e["source_name"] and t.endswith(" - " + e["source_name"]):
+            t = t[: -len(e["source_name"]) - 3]
+        k = re.sub(r"\W+", "", t.lower())[:60]
+        if not t or not e["link"] or k in seen:
+            continue
+        seen.add(k)
+        cands.append({"url": e["link"], "title": t, "domain": host,
+                      "seendate": e["date"].strftime("%Y%m%dT%H%M%SZ") if e["date"] else "",
+                      "language": "Hebrew" if _HEB.search(t) else "English", "sourcecountry": ""})
+    cands = cands[:16]
+
+    def work(a):
+        if "news.google.com" in a["url"]:
+            real = decode_gnews(a["url"])
+            if real == a["url"]:
+                return None
+            a["url"], a["domain"] = real, _host(real)
+        if domain_match(a["domain"], skip):
+            return None
+        art = fetch_article(a["url"])
+        if not art or len(art["text"]) < 1800:
+            return None
+        a["chars"] = len(art["text"])
+        return a
+
+    with ThreadPoolExecutor(6) as ex:
+        ok = [a for a in ex.map(work, cands) if a]
+    return ok[:want], f"فُحص {len(cands)} مرشحاً، منها {len(ok)} بنص كامل."
+
+
+# ───────────────────────── تصفّح قسم من موقع (روابط الصفحة + عناوينها) ─────────────────────────
+
+
+class _LinkParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.links, self._href, self._buf = [], None, []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            self._href, self._buf = dict(attrs).get("href"), []
+
+    def handle_data(self, d):
+        if self._href is not None:
+            self._buf.append(d)
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self._href is not None:
+            self.links.append((self._href, " ".join("".join(self._buf).split())))
+            self._href = None
+
+
+def browse_section(url, domains, limit=80):
+    """يفتح صفحة قسم ويستخرج روابط المقالات وعناوينها. يعيد (items, خطأ)"""
+    if not is_safe_url(url):
+        return [], "رابط غير صالح."
+    try:
+        r = requests.get(url, headers=UA, timeout=20)
+        r.raise_for_status()
+    except Exception as e:
+        return [], f"تعذّر فتح الصفحة مباشرة ({type(e).__name__}) — غالباً يحجب الموقع الزحف الآلي."
+    p = _LinkParser()
+    p.feed(r.text[:1500000])
+    seen, out = set(), []
+    for href, text in p.links:
+        if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
+            continue
+        full = urljoin(r.url, href).split("#")[0]
+        if not full.startswith("http") or not domain_match(_host(full), domains):
+            continue
+        path = urlparse(full).path
+        if len(text) < 25 or len(text.split()) < 3 or full in seen or full.rstrip("/") == r.url.rstrip("/"):
+            continue
+        if path.count("/") < 2 and not re.search(r"\d", path):
+            continue
+        seen.add(full)
+        out.append({"url": full, "title": text, "seendate": "", "domain": _host(full), "sourcecountry": "",
+                    "language": "Hebrew" if _HEB.search(text) else "English"})
+    return out[:limit], ("" if out else "لم أجد روابط مقالات واضحة في الصفحة (قد تُحمَّل بالجافاسكربت).")
+
+
+_FEED_LINK = re.compile(r'<link[^>]+type=["\']application/(?:rss|atom)\+xml["\'][^>]*>', re.I)
+_FEED_PATHS = ("/feed", "/feed/", "/rss", "/rss.xml", "/rss/", "/feeds/all.rss.xml", "/atom.xml", "/index.xml", "/?feed=rss2")
+
+
+def _site_feed_items(host, days, lang_label):
+    """يقرأ آخر العناوين من موقع المصدر نفسه: خلاصة RSS/Atom (مكتشفة من الصفحة أو شائعة)، وإلا روابط الصفحة الرئيسية.
+    يعيد (items, ملاحظة)"""
+    base = f"https://{host}"
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cands, home_html = [], ""
+    try:
+        r = requests.get(base + "/", headers=BROWSER_HEADERS, timeout=12)
+        if r.ok:
+            home_html = r.text[:600000]
+            for tag in _FEED_LINK.findall(home_html):
+                m = re.search(r'href=["\']([^"\']+)', tag)
+                if m:
+                    cands.append(urljoin(r.url, _html.unescape(m.group(1))))
+    except Exception:
+        pass
+    cands += [base + x for x in _FEED_PATHS]
+    seen_c, feed_items, used = set(), [], ""
+    for u in cands:
+        if u in seen_c or len(seen_c) >= 8 or not is_safe_url(u):
+            continue
+        seen_c.add(u)
+        try:
+            rr = requests.get(u, headers=BROWSER_HEADERS, timeout=12)
+            if not rr.ok or len(rr.content) > 5_000_000:
+                continue
+            got = parse_feed(rr.content)
+        except Exception:
+            continue
+        if got:
+            feed_items, used = got, u
+            break
+    items = []
+    for e in feed_items:
+        if not e["link"] or not e["title"]:
+            continue
+        if e["date"] and e["date"] < cutoff:
+            continue
+        items.append({"url": e["link"], "title": _html.unescape(e["title"]),
+                      "seendate": e["date"].strftime("%Y%m%dT%H%M%SZ") if e["date"] else "",
+                      "domain": _host(e["link"]) or host, "sourcecountry": "", "language": lang_label})
+    if items:
+        return items, f"مباشر من الموقع ⟵ {host} ⟵ {len(items)} (خلاصة RSS)"
+    if home_html:
+        got, _err = browse_section(base + "/", [host], limit=60)
+        for a in got:
+            a["language"] = lang_label
+        if got:
+            return got, f"مباشر من الموقع ⟵ {host} ⟵ {len(got)} (الصفحة الرئيسية، بلا تاريخ)"
+    return [], f"مباشر من الموقع ⟵ {host} ⟵ تعذّر (الموقع يحجب أو لا يوفّر خلاصة)"
+
+
+def direct_headlines(selected, days, max_items=300):
+    """أحدث عناوين المصادر المختارة من مواقعها مباشرة. selected: (label, domains, lang). يعيد (items, notes)"""
+    jobs = []
+    for _lbl, doms, lg in selected:
+        ls = entry_langs(lg) or ["en"]
+        lab = {"he": "Hebrew", "ar": "Arabic", "tr": "Turkish", "fa": "Persian", "am": "Amharic"}.get(ls[0], "English")
+        for d in _split_domains([doms]):
+            host = d.split("/")[0]
+            if host and (host, lab) not in jobs:
+                jobs.append((host, lab))
+
+    def work(j):
+        try:
+            return _site_feed_items(j[0], days, j[1])
+        except Exception as ex:
+            return [], f"مباشر من الموقع ⟵ {j[0]} ⟵ تعذّر ({type(ex).__name__})"
+
+    items, notes = [], []
+    with ThreadPoolExecutor(8) as ex:
+        for its, note in ex.map(work, jobs):
+            items += its
+            notes.append(note)
+    seen, uniq = set(), []
+    for a in sorted(items, key=lambda a: a["seendate"], reverse=True):
+        k = a["url"].split("?")[0].rstrip("/")
+        if k in seen:
+            continue
+        seen.add(k)
+        a["ctype"], a["ctype_sure"] = classify(a["url"], a["title"])
+        uniq.append(a)
+    return uniq[:max_items], notes
+
+
+def merge_items(*lists):
+    """يدمج قوائم عناوين بلا تكرار (بالرابط أو بالعنوان) ويرتبها من الأحدث"""
+    seen_u, seen_t, out = set(), set(), []
+    for lst in lists:
+        for a in lst:
+            u = a["url"].split("?")[0].rstrip("/")
+            t = re.sub(r"\W+", "", a["title"].lower())[:80]
+            if u in seen_u or (t and t in seen_t):
+                continue
+            seen_u.add(u)
+            seen_t.add(t)
+            out.append(a)
+    return sorted(out, key=lambda a: a.get("seendate", ""), reverse=True)
+
+
+# ───────────────────────── تحليل رابط (خبر أو تغريدة) لإضافة مصدر/كاتب ─────────────────────────
+
+TW_HOSTS = {"twitter.com", "x.com", "mobile.twitter.com", "t.co"}
+FB_HOSTS = {"facebook.com", "m.facebook.com", "web.facebook.com", "mbasic.facebook.com", "fb.com", "fb.watch", "l.facebook.com"}
+_META_RE = re.compile(r"<meta\s+([^>]+?)/?>", re.I)
+_ATTR_RE = re.compile(r"([a-zA-Z_:\-]+)\s*=\s*(?:\"([^\"]*)\"|'([^']*)')")
+_GENERIC_AUTH = re.compile(r"^(staff|editors?|admin|reuters|ap|afp|newsroom|editorial board|the .* staff)$", re.I)
+_HEB = re.compile(r"[\u0590-\u05FF]")
+
+
+def _metas(page):
+    out = []
+    for m in _META_RE.finditer(page[:300000]):
+        attrs = {k.lower(): (v1 or v2) for k, v1, v2 in _ATTR_RE.findall(m.group(1))}
+        key = (attrs.get("property") or attrs.get("name") or "").lower()
+        if key and "content" in attrs:
+            out.append((key, _html.unescape(attrs["content"]).strip()))
+    return out
+
+
+def _clean_authors(raw, site_name):
+    names = []
+    for r in raw:
+        r = re.sub(r"^\s*(by|מאת|بقلم)\s+", "", r, flags=re.I)
+        for part in re.split(r"\s+and\s+|\s*&\s*|\s*;\s*|\s*،\s*|\s*,\s*", r):
+            part = part.strip(" -–|")
+            if (
+                2 <= len(part) <= 60
+                and "http" not in part
+                and "@" not in part
+                and part.lower() != (site_name or "").lower()
+                and not _GENERIC_AUTH.match(part)
+                and part not in names
+            ):
+                names.append(part)
+    return names[:6]
+
+
+def _tweet_info(url):
+    u = re.sub(r"^https?://(www\.|mobile\.)?x\.com", "https://twitter.com", url.strip())
+    r = requests.get(
+        "https://publish.twitter.com/oembed", params={"url": u, "omit_script": "1", "dnt": "true"}, headers=UA, timeout=15
+    )
+    r.raise_for_status()
+    j = r.json()
+    h = j.get("html", "")
+    m = re.search(r"<p[^>]*>(.*?)</p>", h, re.S)
+    inner = m.group(1) if m else ""
+    text = " ".join(_html.unescape(re.sub(r"<[^>]+>", " ", inner)).split())
+    links = []
+    for l in re.findall(r'href="(https?://[^"]+)"', inner)[:4]:
+        try:
+            rr = requests.get(l, headers=UA, allow_redirects=True, timeout=10, stream=True)
+            final = rr.url
+            rr.close()
+        except Exception:
+            final = l
+        if _host(final) not in TW_HOSTS:
+            links.append(final)
+    author_url = j.get("author_url", "")
+    return {"author": j.get("author_name", ""), "handle": author_url.rstrip("/").split("/")[-1], "text": text, "links": links}
+
+
+def _fb_info(url):
+    """يقرأ وسوم og من صفحة/منشور فيسبوك العام (بهوية زاحف فيسبوك) ويستخرج اسم الصفحة وأي رابط خارجي"""
+    r = requests.get(url, headers={**UA, "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"}, timeout=15)
+    r.raise_for_status()
+    page = r.text[:400000]
+    metas = _metas(page)
+    get = lambda *keys: next((v for k, v in metas if k in keys and v), "")
+    links = [unquote(m) for m in re.findall(r"https?://l\.facebook\.com/l\.php\?u=([^\"&\s]+)", page)]
+    links += re.findall(r"https?://[^\s\"<>]+", get("og:description"))
+    links = [u for u in links if _host(u) not in FB_HOSTS and is_safe_url(u)]
+    return {"name": re.sub(r"\s*[\|\-–]\s*(Facebook|فيسبوك).*$", "", get("og:title", "twitter:title")).strip(), "links": links}
+
+
+def analyze_url(url):
+    """يحلل رابط خبر أو تغريدة ويستخرج: الموقع، اسمه، لغته، الكتّاب. يعيد dict (قد يحوي error)"""
+    url = url.strip()
+    out = {"error": None, "tweet": None, "article_url": url, "domain": "", "site_name": "", "title": "",
+           "authors": [], "lang": "en", "group": "us"}
+    if _host(url) in TW_HOSTS:
+        try:
+            tw = _tweet_info(url)
+        except Exception as e:
+            out["error"] = f"تعذّرت قراءة التغريدة ({type(e).__name__}). الصق رابط المقال نفسه بدلاً منها."
+            return out
+        out["tweet"] = tw
+        if not tw["links"]:
+            out["article_url"] = None
+            if tw["author"]:
+                out["authors"] = [{"raw": tw["author"], "src": f"حساب التغريدة @{tw['handle']}"}]
+            out["error"] = "لا يوجد رابط مقال داخل التغريدة؛ يمكنك إضافة صاحب الحساب ككاتب وتحديد موقعه يدوياً."
+            return out
+        out["article_url"] = tw["links"][0]
+    if _host(out["article_url"]) in FB_HOSTS:
+        try:
+            fb = _fb_info(out["article_url"])
+        except Exception as e:
+            out["error"] = f"تعذّرت قراءة رابط فيسبوك ({type(e).__name__}) — فيسبوك يحجب كثيراً من الصفحات. الصق رابط الخبر نفسه أو أدخل الموقع يدوياً."
+            return out
+        if fb["links"]:
+            out["article_url"] = fb["links"][0]
+        else:
+            if fb["name"]:
+                out["authors"] = [{"raw": fb["name"], "src": "اسم صفحة فيسبوك"}]
+            out["article_url"] = None
+            out["error"] = "لم أجد رابط خبر داخل المنشور (فيسبوك يخفي المحتوى عن الزحف). الصق رابط الخبر نفسه، أو أدخل دومين الموقع يدوياً."
+            return out
+    art = out["article_url"]
+    if not is_safe_url(art):
+        out["error"] = "رابط غير صالح."
+        return out
+    try:
+        r = requests.get(art, headers=UA, timeout=20)
+        r.raise_for_status()
+    except Exception as e:
+        out["error"] = f"تعذّر فتح الصفحة ({type(e).__name__})."
+        out["domain"] = _host(art)
+        out["site_name"] = out["domain"]
+        return out
+    page = r.text[:600000]
+    out["article_url"] = r.url
+    out["domain"] = _host(r.url)
+    metas = _metas(page)
+    get = lambda *keys: next((v for k, v in metas if k in keys and v), "")
+    out["site_name"] = get("og:site_name", "application-name") or out["domain"]
+    out["title"] = get("og:title", "twitter:title") or ""
+    m = re.search(r"<html[^>]*\blang=[\"']?([a-zA-Z\-]+)", page[:3000], re.I)
+    lang = (m.group(1) if m else get("og:locale")).lower()
+    out["lang"] = "he" if lang.startswith(("he", "iw")) or out["domain"].endswith(".il") and _HEB.search(out["title"]) else "en"
+    raw = [v for k, v in metas if k in ("author", "parsely-author", "dc.creator", "sailthru.author") and v]
+    for mm in re.finditer(r'"author"\s*:', page[:400000]):
+        seg = page[mm.end() : mm.end() + 500].split('"publisher"')[0]
+        raw += re.findall(r'"name"\s*:\s*"([^"]{2,80})"', seg)[:3]
+    names = _clean_authors([_html.unescape(x) for x in raw], out["site_name"])
+    out["authors"] = [{"raw": n, "src": "من الصفحة"} for n in names]
+    if out["tweet"] and out["tweet"]["author"] and out["tweet"]["author"] not in names:
+        out["authors"].append({"raw": out["tweet"]["author"], "src": f"حساب التغريدة @{out['tweet']['handle']}"})
+    dom = out["domain"]
+    out["group"] = "il" if dom.endswith(".il") else ("uk" if dom.endswith((".uk", "bbc.com")) else "us")
+    for a in out["authors"]:
+        raw_n = a["raw"]
+        if _HEB.search(raw_n):
+            a["en"], a["ar"], a["heb"] = tr(raw_n, "iw", "en"), tr(raw_n, "iw", "ar"), True
+        elif _HAS_AR.search(raw_n):
+            a["en"], a["ar"], a["heb"] = tr(raw_n, "ar", "en"), raw_n, False
+        else:
+            a["en"], a["ar"], a["heb"] = raw_n, tr(raw_n, "en", "ar"), False
+    return out
+
+
+# ───────────────────────── التلخيص ─────────────────────────
+
+
+_TOK = re.compile(r"[\w\u0590-\u05FF\u0600-\u06FF]{3,}")
+
+
+def summary_points(text, n=None):
+    """أهم جمل المقال كله (استخلاصي مجاني): تُرتَّب الجمل بتكرار كلماتها المميزة في كامل النص، وتُعاد بترتيب ورودها"""
+    sents = [x.strip() for x in re.split(r"(?<=[.!?؟])\s+|\n+", text or "") if 40 <= len(x.strip()) <= 420]
+    if not sents:
+        return []
+    stop = set().union(*[set(v) for v in STOP.values()]) if STOP else set()
+    toks = [[w for w in _TOK.findall(s.lower()) if w not in stop and not w.isdigit()] for s in sents]
+    freq = {}
+    for ws in toks:
+        for w in set(ws):
+            freq[w] = freq.get(w, 0) + 1
+    n = n or (6 if len(text) < 6000 else 8)
+    if len(sents) <= n:
+        return sents
+    scored = []
+    for i, ws in enumerate(toks):
+        sc = sum(freq[w] for w in set(ws) if freq[w] > 1) / ((len(ws) + 8) ** 0.5)
+        if i < 2:
+            sc *= 1.4
+        scored.append((sc, i))
+    top = sorted(sorted(scored, reverse=True)[:n], key=lambda x: x[1])
+    return [sents[i] for _, i in top]
+
+
+def reading_verdict(text):
+    words = len((text or "").split())
+    mins = max(1, round(words / 190))
+    if words < 150:
+        v = "مقال قصير جداً — الملخص ده يكفي غالباً."
+    elif words < 500:
+        v = "مقال قصير — اقراه لو النقاط دي تهمك."
+    elif words < 1500:
+        v = "مقال متوسط الطول."
+    else:
+        v = "مقال طويل — اقرا النقاط الأول وبعدين قرر هتكمل ولا لأ."
+    return f"⏱️ حوالي {words} كلمة (≈ {mins} دقيقة قراءة). {v}"
+
+
+def summarize(url, api_key=None, verdict=True):
+    """ملخص مجاني للمقال كله في نقاط: أهم جمله مترجمة للعربية (بدون أي ذكاء اصطناعي خارجي أو مفتاح)"""
+    art = fetch_article(url)
+    if not art:
+        return "تعذّر جلب نص المقال (قد يكون خلف جدار اشتراك أو يحجب الزحف)."
+    pts = summary_points(art["text"])
+    if not pts:
+        return "النص قصير جداً للتلخيص."
+    ar = _batch_tr(pts, "ar")
+    out = "ملخص مبسّط (أهم جمل المقال كله، مترجمة):\n\n" + "\n".join(f"- {p}" for p in ar)
+    if verdict:
+        out += "\n\n" + reading_verdict(art["text"])
+    return out
+
+
+# ───────────────────────── القراءة الصوتية (TTS) ─────────────────────────
+
+try:  # أصوات مايكروسوفت العصبية (جودة عالية). إن لم تتوفر الحزمة يُستخدم صوت Google البديل
+    import edge_tts as _edge_tts
+except Exception:
+    _edge_tts = None
+
+VOICES = {
+    "سلمى — مصرية (أنثى)": "ar-EG-SalmaNeural",
+    "شاكر — مصري (ذكر)": "ar-EG-ShakirNeural",
+    "حامد — سعودي (ذكر)": "ar-SA-HamedNeural",
+    "زارية — سعودية (أنثى)": "ar-SA-ZariyahNeural",
+    "فاطمة — إماراتية (أنثى)": "ar-AE-FatimaNeural",
+    "حمدان — إماراتي (ذكر)": "ar-AE-HamdanNeural",
+}
+TTS_MAX_CHARS = 30000
+
+
+def clean_for_tts(text):
+    t = re.sub(r"https?://\S+", " ", text or "")
+    t = re.sub(r"[\*\#_`>|\[\]{}<]+", " ", t)
+    t = re.sub(r"\s*\n+\s*", ". ", t)
+    t = re.sub(r"\s+", " ", t)
+    t = re.sub(r"(\s*[.،]\s*){2,}", ". ", t)
+    return t.strip()
+
+
+def split_for_tts(text, limit):
+    """يقسّم النص إلى قطع لا تتجاوز limit عند حدود الجمل"""
+    sents = re.split(r"(?<=[.!?؟…])\s+", text)
+    chunks, cur = [], ""
+    for s_ in sents:
+        while len(s_) > limit:  # جملة طويلة جداً: قصّها عند أقرب مسافة
+            cut = s_.rfind(" ", 0, limit)
+            cut = cut if cut > 0 else limit
+            if cur:
+                chunks.append(cur)
+                cur = ""
+            chunks.append(s_[:cut])
+            s_ = s_[cut:].strip()
+        if not s_:
+            continue
+        if cur and len(cur) + len(s_) + 1 > limit:
+            chunks.append(cur)
+            cur = s_
+        else:
+            cur = f"{cur} {s_}" if cur else s_
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
+def _edge_chunk(text, voice, rate_str):
+    import asyncio
+
+    async def run():
+        comm = _edge_tts.Communicate(text, voice, rate=rate_str)
+        buf = bytearray()
+        async for ch in comm.stream():
+            if ch["type"] == "audio":
+                buf += ch["data"]
+        if not buf:
+            raise RuntimeError("لم يصل صوت")
+        return bytes(buf)
+
+    last = None
+    for _ in range(3):
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(run())
+        except Exception as e:
+            last = e
+            time.sleep(1.0)
+        finally:
+            loop.close()
+    raise last
+
+
+def _google_chunk(text):
+    last = None
+    for _ in range(2):
+        try:
+            r = requests.get(
+                "https://translate.google.com/translate_tts",
+                params={"ie": "UTF-8", "q": text, "tl": "ar", "client": "tw-ob"},
+                headers=UA,
+                timeout=20,
+            )
+            r.raise_for_status()
+            if "audio" not in r.headers.get("content-type", ""):
+                raise ValueError("الرد ليس صوتاً")
+            return r.content
+        except Exception as e:
+            last = e
+            time.sleep(0.8)
+    raise last
+
+
+def tts(text, voice="ar-EG-SalmaNeural", rate=0):
+    """يحوّل نصاً عربياً إلى MP3. يعيد (bytes، المحرك، ملاحظة). يرفع RuntimeError عند فشل كل المحركات."""
+    text = clean_for_tts(text)
+    note = ""
+    if len(text) > TTS_MAX_CHARS:
+        text = text[:TTS_MAX_CHARS]
+        note = f"اقتُطع النص عند {TTS_MAX_CHARS} حرفاً (نحو ساعتين) — قلّل المحتوى لقراءته كاملاً. "
+    if not text:
+        raise RuntimeError("لا يوجد نص للقراءة")
+    err = ""
+    if _edge_tts is not None:
+        try:
+            rate_str = f"{int(rate):+d}%"
+            chunks = split_for_tts(text, 2400)
+            with ThreadPoolExecutor(3) as ex:
+                parts = list(ex.map(lambda c: _edge_chunk(c, voice, rate_str), chunks))
+            return b"".join(parts), "edge", note
+        except Exception as e:
+            err = f"{type(e).__name__}"
+    cut = text[:6000]
+    if len(text) > 6000:
+        note += "الصوت البديل يقرأ أول 6000 حرف فقط. "
+    chunks = split_for_tts(cut, 180)
+    with ThreadPoolExecutor(6) as ex:
+        parts = list(ex.map(_google_chunk, chunks))
+    why = f"تعذّر الصوت العصبي ({err})" if err else "الصوت العصبي غير مثبّت"
+    return b"".join(parts), "google", f"{why}؛ استُخدم صوت Google (أبسط ولا يدعم تغيير السرعة). " + note
