@@ -17,7 +17,7 @@ GIST_ID = "ضع_هنا_معرف_Gist_الخاص"
 
 # اختياري: تشغيل GitHub Actions من داخل التطبيق
 ACTIONS_TOKEN = "ضع_هنا_token_بصلاحية_Actions_write"
-GH_REPO = "applloo/marsad-news"
+GH_REPO = "applloo/marsad-pro"
 GH_BRANCH = "main"
 
 # أضف مزود الذكاء الاصطناعي الذي ستستخدمه فقط
