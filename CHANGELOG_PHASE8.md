@@ -218,3 +218,28 @@
 - Added an Arabic casebook panel with snapshot metrics, recent change history, and JSON/prompt downloads.
 - Added `intel_case_files` to the existing Gist-backed app store and merge normalization.
 - No paid AI/API call, automatic search, backup/restore feature, GitHub push, or deployment is triggered.
+
+
+## Phase 8.25
+- Added auditable task lifecycle records and dispatch tracking for daily/search/topic/watch GitHub Actions requests.
+- Added stale-task review flags, heartbeat, retry lineage, and task history in Operations.
+- Extended Gist store schema with `job_tasks`; no claim of atomic distributed locking.
+
+
+## Phase 8.26
+- Added resumable large-research batching for active case materials, source provenance IDs, chunk prompts, manual output capture, failed-batch retry, progress, and final synthesis prompt.
+- Added `research_batches` to the Gist data schema and stable-ID merge handling.
+- No automatic AI/API calls or web crawling; no backup/restore.
+
+
+## Phase 8.27
+- Added a manual-first Egyptian Arabic video storyteller with configurable defaults, analytical reading sheet, timed script prompt, production storyboard, Shorts/Reels, publishing kit, revision workflow, and separately versioned artifacts linked to research cases.
+- Added persistent `video_projects` store support and case-deletion cascade. No paid API calls or backup/restore features.
+
+## Phase 8.28 — Search, Translation & Automatic Intelligence Pipeline
+- Added strict UTC time-window post-filtering for the primary search flow and GitHub Actions search scopes.
+- Added automatic Arabic translations of available article snippets for result cards, with explicit missing/failed status.
+- Added automatic research-batch generation from collected search results and prompt download.
+- Added candidate thread clustering with provenance and caution labels.
+- Added six-hour search-all period option. No paid AI API calls or paywall bypasses.
+- Validation: 171 tests passed; Streamlit browser and live crawl not run.

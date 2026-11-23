@@ -11,6 +11,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import core
+import intelligence_pipeline as intelligence_pipeline_mod
 import store
 import writers as writers_mod
 from sources import ARABIC, EGYPT, ISRAEL, REGION, UK, USA, egypt_only, source_country
@@ -81,6 +82,8 @@ def search_scope(key, groups, gd_country, gn_country, custom, terms, cfg, log):
         if key == "eg":
             items = egypt_only(items)
         core.translate_titles(items)
+        items = intelligence_pipeline_mod.filter_window(items, days * 24, now=datetime.now(timezone.utc))
+        items = intelligence_pipeline_mod.prepare_cards(items, translate_text=lambda texts: core._batch_tr(texts, "ar"))
         data.update(items=_by_url(items), used=d_notes + g_notes)
         if not items:
             data["errors"] = ["لم تُرجع المصادر عناوين في الفترة دي."]
@@ -140,6 +143,8 @@ def search_scope(key, groups, gd_country, gn_country, custom, terms, cfg, log):
         keep = [a for a in items if not (a.get("fetched") and not a.get("found"))]
         data["hidden"] = len(items) - len(keep)
         items = keep
+    items = intelligence_pipeline_mod.filter_window(items, days * 24, now=end)
+    items = intelligence_pipeline_mod.prepare_cards(items, translate_text=lambda texts: core._batch_tr(texts, "ar"))
     data.update(items=items, hl=hl)
     if items:
         data["errors"] = []

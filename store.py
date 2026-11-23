@@ -12,7 +12,7 @@ API = "https://api.github.com/gists/"
 
 def empty():
     return {"saved": [], "sources": [], "writers": [], "keys": [], "watch_topics": "", "posts": [],
-            "custom_dossiers": [], "custom_threads": [], "analysis_cases": [], "research_cases": [], "case_links": [], "early_warning": {"baselines": {}, "reports": [], "last_scan": ""}, "scenario_worksheets": [], "analysis_packages": [], "ai_usage": [], "billing_reservations": [], "ai_results": [], "content_jobs": [], "content_results": [], "prompt_library": [], "prompt_chains": [], "prompt_bundles": [], "source_health_runs": [], "intel_dossiers": [], "intel_case_files": [], "ai_settings": {}, "outlet_profiles": {}, "writer_profiles": {}}
+            "custom_dossiers": [], "custom_threads": [], "analysis_cases": [], "research_cases": [], "case_links": [], "early_warning": {"baselines": {}, "reports": [], "last_scan": ""}, "scenario_worksheets": [], "analysis_packages": [], "ai_usage": [], "billing_reservations": [], "ai_results": [], "content_jobs": [], "content_results": [], "prompt_library": [], "prompt_chains": [], "prompt_bundles": [], "source_health_runs": [], "intel_dossiers": [], "intel_case_files": [], "job_tasks": [], "research_batches": [], "video_projects": [], "ai_settings": {}, "outlet_profiles": {}, "writer_profiles": {}}
 
 
 def normalize(data):
@@ -23,7 +23,7 @@ def normalize(data):
                 out[k] = data[k]
             elif isinstance(out[k], str) and isinstance(data.get(k), str):
                 out[k] = data[k]
-        for k in ("custom_dossiers", "custom_threads", "analysis_cases", "research_cases", "case_links", "intel_case_files", "scenario_worksheets", "analysis_packages", "ai_usage", "billing_reservations", "ai_results", "content_jobs", "content_results", "prompt_library", "prompt_chains", "prompt_bundles"):
+        for k in ("custom_dossiers", "custom_threads", "analysis_cases", "research_cases", "case_links", "intel_case_files", "scenario_worksheets", "analysis_packages", "ai_usage", "billing_reservations", "ai_results", "content_jobs", "content_results", "prompt_library", "prompt_chains", "prompt_bundles", "job_tasks", "research_batches", "video_projects"):
             if isinstance(data.get(k), list):
                 out[k] = data[k]
         if isinstance(data.get("early_warning"), dict):
@@ -154,7 +154,7 @@ def merge(base, extra):
     base["sources"] += [x for x in extra["sources"] if (x.get("domain"), x.get("group")) not in seen]
     seen = {x.get("id") for x in base["writers"]}
     base["writers"] += [x for x in extra["writers"] if x.get("id") not in seen]
-    for key in ("custom_dossiers", "custom_threads", "analysis_cases", "research_cases", "case_links", "intel_case_files", "scenario_worksheets", "analysis_packages", "ai_usage", "billing_reservations", "ai_results", "content_jobs", "content_results", "prompt_chains", "prompt_bundles"):
+    for key in ("custom_dossiers", "custom_threads", "analysis_cases", "research_cases", "case_links", "intel_case_files", "scenario_worksheets", "analysis_packages", "ai_usage", "billing_reservations", "ai_results", "content_jobs", "content_results", "prompt_chains", "prompt_bundles", "job_tasks", "research_batches", "video_projects"):
         seen = {x.get("id") for x in base[key]}
         base[key] += [x for x in extra[key] if x.get("id") not in seen]
     # مكتبة البرومبتات: ادمج الإصدارات داخل البرومبت نفسه بدلاً من إسقاط النسخ الأحدث عند الدمج.

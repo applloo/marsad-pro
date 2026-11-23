@@ -24,6 +24,10 @@ import image_generation as image_generation_mod
 import ai_providers as ai_providers_mod
 import ai_router as ai_router_mod
 import ai_billing as ai_billing_mod
+import job_control as job_control_mod
+import research_batches as research_batches_mod
+import intelligence_pipeline as intelligence_pipeline_mod
+import video_storyteller as video_storyteller_mod
 import prompt_workbench as prompt_workbench_mod
 import casebook as casebook_mod
 import case_links as case_links_mod
@@ -866,6 +870,29 @@ def persist():
         return False
 
 
+def dispatch_tracked(workflow, label, dispatch_fn, *args):
+    """يسجل طلب التشغيل قبل إرساله، ثم يسجل قبول GitHub أو فشله."""
+    task = job_control_mod.new_task(workflow, label)
+    S().setdefault("job_tasks", [])
+    S()["job_tasks"] = job_control_mod.append_event(S()["job_tasks"], task)
+    if PERSIST and not persist():
+        return False, "لم يتم إرسال المهمة لأن حفظ سجل التشغيل تعذّر. راجع رسالة التخزين ثم أعد المحاولة."
+    try:
+        ok, message = dispatch_fn(*args)
+        target = "submitted" if ok else "failed"
+        job_control_mod.transition(task, target, message)
+        S()["job_tasks"] = job_control_mod.append_event(S()["job_tasks"], task)
+        if PERSIST:
+            persist()
+        return ok, message
+    except Exception as exc:
+        job_control_mod.transition(task, "failed", f"{type(exc).__name__}: {str(exc)[:250]}")
+        S()["job_tasks"] = job_control_mod.append_event(S()["job_tasks"], task)
+        if PERSIST:
+            persist()
+        return False, f"تعذّر إرسال المهمة ({type(exc).__name__})."
+
+
 for _s in S()["sources"]:
     DOMAIN_LABELS[_s["domain"]] = _s["label"]
 
@@ -1052,7 +1079,7 @@ def render_run_report():
             st.markdown(f"آخر تشغيل: **{ico}** — بدأ {when_txt} (القاهرة) · [تفاصيله على GitHub]({lr['url']})")
         c1, c2 = st.columns(2)
         if c1.button("▶️ شغّل التقرير الآن", type="primary", disabled=busy, key="run_rep", use_container_width=True):
-            ok, msg = gh_actions.dispatch(tok, repo, branch)
+            ok, msg = dispatch_tracked("daily.yml", "التقرير اليومي", gh_actions.dispatch, tok, repo, branch)
             (st.success if ok else st.error)(msg)
         if c2.button("🔁 حدّث الحالة", key="run_status", use_container_width=True):
             st.rerun()
@@ -1091,7 +1118,22 @@ def render_workflow_overview():
             created = keys_mod.parse(row.get("created"))
             stamp = created.astimezone(core.TZ).strftime("%Y-%m-%d %H:%M") if created else ""
             st.markdown(f"**{row['label']}** · {state} · {stamp} · [تفاصيل التشغيل]({row.get('url')})")
-        st.caption("تنبيه هندسي: GitHub Actions concurrency منفصل لكل Workflow ما زال كما هو لتجنب إسقاط تشغيلات pending. لا توجد حتى الآن Queue/Lease ذرية مشتركة بين أنواع المهام.")
+        stale_changed = job_control_mod.mark_stale(S().get("job_tasks", []), stale_after_minutes=90)
+        if stale_changed and PERSIST:
+            persist()
+        task_rows = S().get("job_tasks", [])[:12]
+        if task_rows:
+            st.markdown("#### سجل طلبات التشغيل من داخل المرصد")
+            labels = {"queued": "في انتظار الإرسال", "submitted": "قبله GitHub", "running": "يعمل", "succeeded": "نجح", "failed": "فشل", "cancelled": "أُلغي", "stale": "يحتاج مراجعة"}
+            for task in task_rows:
+                state = labels.get(task.get("state"), task.get("state", "غير معروف"))
+                created = keys_mod.parse(task.get("created_at"))
+                stamp = created.astimezone(core.TZ).strftime("%Y-%m-%d %H:%M") if created else ""
+                last_event = (task.get("events") or [{}])[-1]
+                st.caption(f"{task.get('label', task.get('workflow'))} · {state} · {stamp} · {last_event.get('message', '')}")
+        else:
+            st.caption("لم تُسجّل طلبات تشغيل من داخل هذه النسخة بعد.")
+        st.caption("تنبيه هندسي: السجل يوثق طلب الإرسال ورد GitHub فقط. حالة التنفيذ النهائية تُقرأ من GitHub Actions، ولا يوجد حتى الآن قفل ذري مشترك بين كل أنواع المهام.")
 
 
 def render_daily():
@@ -1378,7 +1420,7 @@ def do_search(key, jobs, sel=None, terms=None, pre=False, seed=None):
         update_meta(data, sel)
         live_ph.markdown(live_html(data["items"], hl), unsafe_allow_html=True)
     for ev in core.search_iter(terms, joiner, match, jobs, start_utc, end_utc, max_rec, ctype):
-        status_ph.info(f"⏳ {ev['msg']}")
+        status_ph.info(f"🔎 {ev['msg']}")
         data["errors"], data["used"] = ev["errors"], ev["used"]
         if ev["items"] is not None:
             core.translate_titles([a for a in ev["items"] if "title_ar" not in a])
@@ -1392,13 +1434,35 @@ def do_search(key, jobs, sel=None, terms=None, pre=False, seed=None):
             status_ph.info(f"🔍 جارٍ فحص نصوص المقالات… ({i}/{total})")
             core.enrich_items(items[i:i + 8], matchers, joiner, limit=8)
             live_ph.markdown(live_html(items, hl), unsafe_allow_html=True)
+    # تشديد نافذة التاريخ بعد دمج نتائج GDELT وGoogle News والخلاصات المباشرة.
+    # النتائج بلا تاريخ تظل ظاهرة لكن تُوسم بأنها غير مؤرخة.
+    window_hours = max(1.0, (end_utc - start_utc).total_seconds() / 3600)
+    data["items"] = intelligence_pipeline_mod.filter_window(data["items"], window_hours, now=end_utc)
+    # ترجمة مقتطفات البطاقات تلقائياً، دون استدعاء أي API مدفوع.
+    data["items"] = intelligence_pipeline_mod.prepare_cards(
+        data["items"], translate_text=lambda texts: core._batch_tr(texts, "ar")
+    )
+    data["threads"] = intelligence_pipeline_mod.cluster_items(data["items"])
     update_meta(data, sel)
     if hide_nomatch:
         raw = data["items"]
         data["items"] = [a for a in raw if not (a.get("fetched") and not a.get("found"))]
         data["hidden"] = len(raw) - len(data["items"])
     data["partial"] = False
-    status_ph.success(f"✅ تم — {len(data['items'])} نتيجة")
+    # ملف بحث تلقائي من كل النتائج، مع حفظ المصدر والرابط والمعرّفات. لا يحتاج اختياراً يدوياً.
+    if data["items"]:
+        try:
+            batch = intelligence_pipeline_mod.build_research_bundle(
+                f"{key} | {', '.join(terms[:4])} | آخر {window_hours:g} ساعة", data["items"]
+            )
+            S().setdefault("research_batches", []).append(batch)
+            S()["research_batches"] = S()["research_batches"][-30:]
+            data["auto_research_batch_id"] = batch["id"]
+            data["auto_research_batch_title"] = batch["title"]
+            persist()
+        except Exception as exc:
+            data["auto_research_error"] = type(exc).__name__
+    status_ph.success(f"✅ اكتمل البحث والتجهيز — {len(data['items'])} نتيجة")
     live_ph.empty()
 
 
@@ -1486,6 +1550,23 @@ def render_results(key):
             st.caption("غياب مصدر يعني أن GDELT لم يرصد له مقالات مطابقة في هذه الفترة، وليس أنه غير مدعوم في التطبيق.")
     if data.get("hidden"):
         st.caption(f"تم إخفاء {data['hidden']} مقالاً لم تظهر كلمتك في نصّه.")
+    if data.get("threads"):
+        with st.expander(f"🧵 خيوط إخبارية مرشحة تلقائياً ({len(data['threads'])})"):
+            st.caption("التجميع آلي اعتماداً على تشابه الكلمات في العناوين، وهو اقتراح للربط وليس حكماً بأن الأخبار تتناول الحدث نفسه.")
+            for thread in data["threads"][:20]:
+                st.markdown(f"**{thread['label']}** · {thread['count']} مادة · {', '.join(thread['domains'][:6]) or 'مصادر غير محددة'}")
+    if data.get("auto_research_batch_id"):
+        with st.expander("🧠 ملف البحث التلقائي الجاهز للتحليل", expanded=True):
+            st.success(f"تم تجميع {len(data.get('items', []))} مادة في ملف بحث مستقل: {data.get('auto_research_batch_title')}")
+            batch = next((x for x in S().get("research_batches", []) if x.get("id") == data["auto_research_batch_id"]), None)
+            if batch:
+                st.caption("الملف محفوظ داخل إدارة دفعات البحث، ويمكن متابعة دفعاته يدوياً أو إرسال البرومبت لمساعد ذكاء اصطناعي.")
+                first = next((x for x in batch.get("chunks", []) if x.get("state") == "pending"), None)
+                if first:
+                    prompt_text = research_batches_mod.chunk_prompt(batch, first)
+                    st.download_button("⬇️ تحميل برومبت أول دفعة", prompt_text, file_name="marsad_research_prompt.txt", mime="text/plain", key=f"auto_rb_{key}")
+    elif data.get("auto_research_error"):
+        st.warning("تعذّر إنشاء ملف البحث التلقائي: " + data["auto_research_error"])
     if not data["items"]:
         st.info("لا نتائج ضمن هذه الفلاتر. جرّب «كل الكلمات (AND)» أو وسّع النطاق الزمني أو زِد المصادر.")
     view_items = data["items"]
@@ -1510,6 +1591,10 @@ def render_results(key):
         url = a.get("url", "")
         with st.container(border=True):
             st.markdown(card_html(a), unsafe_allow_html=True)
+            if a.get("summary_ar"):
+                st.markdown("**📝 ملخص/مقتطف مترجم:** " + a["summary_ar"])
+                if a.get("summary_status") != "translated_snippet":
+                    st.caption("حالة الملخص: " + str(a.get("summary_status")))
             if a.get("checked"):
                 if not a.get("fetched"):
                     st.caption("ℹ️ تعذّر فحص نص المقال (قد يكون خلف اشتراك أو يحجب الزحف).")
@@ -2866,7 +2951,7 @@ def render_watch():
                 try:
                     store.save_file(GH_TOKEN, GH_GIST, WATCH_CFG, new_cfg)
                     st.session_state["watch_cfg"] = new_cfg
-                    ok, msg = gh_actions.dispatch(tok, repo, branch, "watch.yml")
+                    ok, msg = dispatch_tracked("watch.yml", "التقرير المخصص", gh_actions.dispatch, tok, repo, branch, "watch.yml")
                     if ok:
                         time.sleep(4)
                         st.session_state["watch_msg"] = f"✅ اتبعت الامر لـ GitHub الساعة {datetime.now(core.TZ).strftime('%H:%M')}. " + msg + " ولما يخلص دوس «حدّث»."
@@ -3326,7 +3411,7 @@ def render_topic_track(P="eg"):
                     code_ = (["local", "arab", "all"] if egp else ["world", "us_uk", "plus_eg"])[scopes.index(scope)]
                     try:
                         store.save_file(GH_TOKEN, GH_GIST, TOPIC_CFG, {"topic": topic.strip(), "alts": alts.strip(), "days": days, "scope": code_, "profile": P})
-                        ok_, msg_ = gh_actions.dispatch(tok_, repo_, branch_, "topic.yml")
+                        ok_, msg_ = dispatch_tracked("topic.yml", "تتبّع موضوع", gh_actions.dispatch, tok_, repo_, branch_, "topic.yml")
                         if ok_:
                             time.sleep(3)
                             ss_.pop(f"{pk}_lr", None)
@@ -3474,7 +3559,7 @@ def render_dossiers_cfg(P="pol"):
 SEARCH_CFG, SEARCH_STATUS = "marsad_search_cfg.json", "marsad_search_job.json"
 SEARCH_SCOPES = {"il": "🇮🇱 المصادر الإسرائيلية", "us": "🇺🇸 المصادر الأمريكية", "uk": "🇬🇧 المصادر البريطانية",
                  "rg": "🌍 تركيا وإيران وإثيوبيا", "eg": "🇪🇬 الشأن المصري", "wr": "✍️ الكتّاب الأجانب", "wa": "🇸🇦 الكتّاب العرب"}
-PERIOD_OPTS = {"آخر 12 ساعة": 0.5, "آخر 24 ساعة": 1, "آخر يومين": 2, "آخر 3 أيام": 3, "آخر 5 أيام": 5, "آخر 7 أيام": 7}
+PERIOD_OPTS = {"آخر 6 ساعات": 0.25, "آخر 12 ساعة": 0.5, "آخر 24 ساعة": 1, "آخر يومين": 2, "آخر 3 أيام": 3, "آخر 5 أيام": 5, "آخر 7 أيام": 7}
 
 
 def _period_label(d):
@@ -3562,7 +3647,7 @@ def render_search_all():
                 try:
                     store.save_file(GH_TOKEN, GH_GIST, SEARCH_CFG, new_cfg)
                     ss["sa_cfg"] = new_cfg
-                    ok, msg = gh_actions.dispatch(tok, repo, branch, "search.yml")
+                    ok, msg = dispatch_tracked("search.yml", "البحث الشامل", gh_actions.dispatch, tok, repo, branch, "search.yml")
                     if ok:
                         time.sleep(4)
                         ss.pop("sa_lr", None)
@@ -4254,6 +4339,204 @@ def render_research_casebook():
                     st.info("لا توجد نتيجتان محفوظتان على الأقل لنفس المرحلة ضمن السلاسل المختارة.")
 
     st.divider()
+    st.markdown("#### 🧩 محرك الأبحاث الضخمة وتقسيم المواد")
+    st.caption("يقسم مواد القضية إلى دفعات قابلة للاستكمال. تجهيز البرومبتات وحفظ النتائج لا يرسل أي طلب مدفوع تلقائياً.")
+    batch_rows = S().setdefault("research_batches", [])
+    case_batches = [x for x in batch_rows if x.get("case_id") == case.get("id")]
+    with st.expander("إنشاء أو استكمال بحث متعدد الدفعات", expanded=not bool(case_batches)):
+        case_materials = [dict(x) for x in case.get("materials", []) if isinstance(x, dict)]
+        st.caption(f"المواد المتاحة في ملف القضية: {len(case_materials)} مادة. يُفضّل أن تتضمن المواد نصوصاً أو مقتطفات، وليس العناوين والروابط فقط.")
+        with st.form(f"research_batch_create_{case['id']}"):
+            rb_title = st.text_input("اسم البحث", value=case.get("title", "بحث جديد"))
+            rb_size = st.selectbox("عدد المواد في كل دفعة", [4, 6, 8, 10, 12], index=2,
+                                   help="الدفعات الأصغر أسهل في المراجعة وتقلل احتمال تجاوز حدود سياق النموذج.")
+            rb_note = st.text_area("تعليمات موحدة لكل الدفعات (اختياري)", height=65,
+                                   placeholder="مثال: ركّز على الموقف الأمريكي والإسرائيلي وانعكاساته على مصر.")
+            rb_create = st.form_submit_button("🧩 تقسيم مواد القضية إلى دفعات", type="primary",
+                                              disabled=not bool(case_materials), use_container_width=True)
+        if rb_create:
+            try:
+                new_batch = research_batches_mod.create_batch(rb_title, case_materials,
+                    batch_size=rb_size, instructions=rb_note)
+                new_batch["case_id"] = case.get("id")
+                new_batch["case_title"] = case.get("title", "")
+                batch_rows.insert(0, new_batch)
+                S()["research_batches"] = batch_rows[:30]
+                if persist():
+                    st.success(f"تم تجهيز {len(new_batch['chunks'])} دفعة من {new_batch['material_count']} مادة. لم يتم إرسال أي طلب لنموذج.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"تعذر تجهيز الدفعات: {type(exc).__name__}: {exc}")
+        if case_batches:
+            rb_labels = {f"{x.get('title')} · {x.get('created_at','')[:16]} · {x.get('material_count',0)} مادة": x for x in case_batches}
+            selected_rb_label = st.selectbox("الأبحاث المحفوظة", list(rb_labels), key=f"rb_select_{case['id']}")
+            active_rb = rb_labels[selected_rb_label]
+            rb_sum = research_batches_mod.summary(active_rb)
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("المواد", rb_sum["materials"])
+            m2.metric("الدفعات", rb_sum["chunks"])
+            m3.metric("المكتمل", rb_sum["completed"])
+            m4.metric("التقدم", f"{rb_sum['progress_percent']}%")
+            st.progress(rb_sum["progress_percent"] / 100)
+            st.caption("كل دفعة لها برومبت مستقل. انسخه إلى المحادثة أو النموذج الذي تختاره، ثم الصق النتيجة هنا. الدفعات المكتملة لا تحتاج لإعادة التنفيذ.")
+            chunk_labels = {
+                f"الدفعة {x.get('index')} · {len(x.get('materials', []))} مادة · "
+                f"{'مكتملة' if x.get('state') == 'completed' else 'فاشلة' if x.get('state') == 'failed' else 'في الانتظار'}": x
+                for x in active_rb.get("chunks", [])
+            }
+            chosen_chunk_label = st.selectbox("اختر الدفعة", list(chunk_labels),
+                                              key=f"rb_chunk_{active_rb['id']}")
+            active_chunk = chunk_labels[chosen_chunk_label]
+            chunk_prompt_text = research_batches_mod.chunk_prompt(active_rb, active_chunk)
+            st.download_button("⬇️ تنزيل برومبت الدفعة TXT", chunk_prompt_text,
+                file_name=f"marsad_{active_rb['id'][:8]}_batch_{active_chunk['index']}.txt",
+                mime="text/plain", key=f"rb_prompt_dl_{active_chunk['id']}")
+            st.text_area("برومبت الدفعة للنسخ", value=chunk_prompt_text, height=220,
+                         key=f"rb_prompt_view_{active_chunk['id']}")
+            with st.form(f"rb_output_form_{active_chunk['id']}"):
+                rb_output = st.text_area("الصق نتيجة تحليل الدفعة هنا", value=active_chunk.get("output", ""),
+                    height=220, placeholder="الصق المخرج الذي حصلت عليه من النموذج...")
+                rb_error = st.text_input("ملاحظة أو سبب فشل (اختياري)", value=active_chunk.get("error", ""))
+                rb_status = st.selectbox("حالة الدفعة بعد الحفظ", ["completed", "failed", "pending"],
+                    index=["completed", "failed", "pending"].index(active_chunk.get("state", "pending")),
+                    format_func=lambda x: {"completed": "مكتملة", "failed": "فشلت وتحتاج إعادة", "pending": "لم تُنفذ بعد"}[x])
+                rb_save = st.form_submit_button("💾 حفظ نتيجة الدفعة", type="primary", use_container_width=True)
+            if rb_save:
+                try:
+                    research_batches_mod.set_chunk_output(active_rb, active_chunk["id"], rb_output,
+                                                          state=rb_status, error=rb_error)
+                    persist()
+                    st.success("تم حفظ نتيجة الدفعة وتحديث سجل البحث.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"تعذر حفظ النتيجة: {type(exc).__name__}")
+            if active_chunk.get("state") == "failed":
+                if st.button("↻ إعادة تجهيز هذه الدفعة", key=f"rb_retry_{active_chunk['id']}"):
+                    research_batches_mod.retry_chunk(active_rb, active_chunk["id"])
+                    persist()
+                    st.rerun()
+            if rb_sum["completed"] == rb_sum["chunks"] and rb_sum["chunks"]:
+                try:
+                    merge_text = research_batches_mod.merge_prompt(active_rb)
+                    st.success("اكتملت كل الدفعات. يمكنك الآن تجهيز برومبت الدمج النهائي.")
+                    st.download_button("⬇️ تنزيل برومبت دمج البحث الكامل", merge_text,
+                        file_name=f"marsad_{active_rb['id'][:8]}_merge.txt", mime="text/plain",
+                        key=f"rb_merge_dl_{active_rb['id']}")
+                    st.text_area("برومبت الدمج النهائي", value=merge_text, height=260,
+                                 key=f"rb_merge_view_{active_rb['id']}")
+                except ValueError as exc:
+                    st.info(str(exc))
+            elif rb_sum["failed"]:
+                st.warning(f"هناك {rb_sum['failed']} دفعة فاشلة. أعد تجهيزها قبل الدمج النهائي.")
+            st.caption("ملاحظة: المحرك يحفظ المواد والمخرجات في بيانات التطبيق. لا يقرأ الروابط بنفسه ولا يضمن أن النص الكامل متاح؛ جودة التحليل مرتبطة بما جُمع فعلياً.")
+
+    st.divider()
+    st.markdown("#### 🎬 محرك إنتاج الفيديو المصري | Phase 8.27")
+    st.caption("حوّل ملف التحليل النهائي إلى ورقة قراءة، وسكريبت مصري، وخطة مشاهد ومقاطع قصيرة. كل شيء هنا يعمل بالبرومبتات اليدوية ولا يرسل طلباً مدفوعاً.")
+    video_rows = S().setdefault("video_projects", [])
+    case_video_projects = [x for x in video_rows if x.get("case_id") == case.get("id")]
+    with st.expander("إنشاء مشروع فيديو أو فتح مشروع محفوظ", expanded=not bool(case_video_projects)):
+        with st.form(f"video_project_create_{case['id']}"):
+            vp_title = st.text_input("عنوان مشروع الفيديو", value=case.get("title", "تحليل سياسي"))
+            vp_type_label = st.selectbox("نوع الفيديو", list(video_storyteller_mod.VIDEO_TYPES),
+                format_func=lambda x: video_storyteller_mod.VIDEO_TYPES[x], index=0)
+            vp_duration = st.selectbox("مدة الفيديو بالدقائق", list(video_storyteller_mod.DURATIONS), index=3)
+            vp_tone = st.selectbox("أسلوب التقديم", list(video_storyteller_mod.TONES),
+                format_func=lambda x: video_storyteller_mod.TONES[x], index=0)
+            vp_scenes = st.checkbox("إنشاء خطة المشاهد والإنتاج", value=True)
+            vp_shorts = st.checkbox("إنشاء مقاطع Shorts / Reels", value=True)
+            vp_dossier = st.text_area("الصق هنا ملف التحليل النهائي أو نتيجة الدمج", height=220,
+                placeholder="الصق التقرير النهائي الذي جمعته من دفعات البحث، مع معرّفات المصادر...")
+            vp_create = st.form_submit_button("🎬 إنشاء مشروع الفيديو وحفظ ملف البحث", type="primary", use_container_width=True)
+        if vp_create:
+            try:
+                cfg = {"video_type": vp_type_label, "duration_minutes": vp_duration, "tone": vp_tone,
+                       "scene_plan_enabled": vp_scenes, "short_clips_enabled": vp_shorts}
+                project = video_storyteller_mod.create_project(case.get("id"), vp_title, vp_dossier, cfg,
+                    dossier_id=f"case:{case.get('id')}")
+                video_rows.insert(0, project)
+                S()["video_projects"] = video_rows[:50]
+                persist(); st.success("اتحفظ مشروع الفيديو وملف البحث المرجعي. مفيش أي استدعاء لنموذج أو تكلفة."); st.rerun()
+            except Exception as exc:
+                st.error(f"تعذر إنشاء المشروع: {type(exc).__name__}: {exc}")
+        if case_video_projects:
+            vp_labels = {f"{x.get('case_title') or x.get('case_id')} · {x.get('created_at','')[:16]} · {len(x.get('artifacts', []))} مخرج": x for x in case_video_projects}
+            selected_vp_label = st.selectbox("مشروعات الفيديو المحفوظة", list(vp_labels), key=f"vp_select_{case['id']}")
+            active_vp = vp_labels[selected_vp_label]
+            cfg = video_storyteller_mod.validate_settings(active_vp.get("settings"))
+            st.caption(f"الإعدادات الحالية: {video_storyteller_mod.VIDEO_TYPES[cfg['video_type']]} · {cfg['duration_minutes']} دقائق · {video_storyteller_mod.TONES[cfg['tone']]}")
+            with st.form(f"vp_edit_settings_{active_vp['id']}"):
+                edit_type = st.selectbox("تعديل نوع الفيديو", list(video_storyteller_mod.VIDEO_TYPES), index=list(video_storyteller_mod.VIDEO_TYPES).index(cfg['video_type']), format_func=lambda x: video_storyteller_mod.VIDEO_TYPES[x])
+                edit_duration = st.selectbox("تعديل المدة", list(video_storyteller_mod.DURATIONS), index=list(video_storyteller_mod.DURATIONS).index(cfg['duration_minutes']))
+                edit_tone = st.selectbox("تعديل أسلوب التقديم", list(video_storyteller_mod.TONES), index=list(video_storyteller_mod.TONES).index(cfg['tone']), format_func=lambda x: video_storyteller_mod.TONES[x])
+                edit_scenes = st.checkbox("خطة المشاهد مفعلة", value=cfg['scene_plan_enabled'])
+                edit_shorts = st.checkbox("المقاطع القصيرة مفعلة", value=cfg['short_clips_enabled'])
+                edit_save = st.form_submit_button("حفظ إعدادات هذا الفيديو")
+            if edit_save:
+                active_vp["settings"] = video_storyteller_mod.validate_settings({"video_type": edit_type, "duration_minutes": edit_duration, "tone": edit_tone, "scene_plan_enabled": edit_scenes, "short_clips_enabled": edit_shorts})
+                active_vp["updated_at"] = video_storyteller_mod._now(); persist(); st.rerun()
+
+            st.markdown("##### 1. ورقة القراءة التحليلية")
+            read_prompt = video_storyteller_mod.reading_prompt(active_vp)
+            st.download_button("⬇️ تنزيل برومبت ورقة القراءة", read_prompt, file_name=f"marsad_video_reading_{active_vp['id'][:8]}.txt", mime="text/plain", key=f"vp_read_dl_{active_vp['id']}")
+            st.text_area("برومبت ورقة القراءة للنسخ", value=read_prompt, height=180, key=f"vp_read_prompt_{active_vp['id']}")
+            with st.form(f"vp_read_save_{active_vp['id']}"):
+                read_output = st.text_area("الصق نتيجة ورقة القراءة هنا", height=160, key=f"vp_read_output_{active_vp['id']}")
+                read_submit = st.form_submit_button("حفظ ورقة القراءة كإصدار")
+            if read_submit:
+                try:
+                    video_storyteller_mod.save_artifact(active_vp, "reading_sheet", read_output, title="ورقة القراءة التحليلية")
+                    persist(); st.success("اتحفظت ورقة القراءة."); st.rerun()
+                except Exception as exc: st.error(str(exc))
+
+            st.markdown("##### 2. السكريبت المصري وخطة الإنتاج")
+            saved_reading = video_storyteller_mod.latest_artifact(active_vp, "reading_sheet")
+            script_prompt_text = video_storyteller_mod.script_prompt(active_vp, saved_reading.get("content", "") if saved_reading else "")
+            st.download_button("⬇️ تنزيل برومبت السكريبت والإنتاج", script_prompt_text, file_name=f"marsad_video_script_{active_vp['id'][:8]}.txt", mime="text/plain", key=f"vp_script_dl_{active_vp['id']}")
+            st.text_area("برومبت السكريبت للنسخ", value=script_prompt_text, height=220, key=f"vp_script_prompt_{active_vp['id']}")
+            with st.form(f"vp_script_save_{active_vp['id']}"):
+                script_output = st.text_area("السكريبت المنطوق", height=220, key=f"vp_script_output_{active_vp['id']}")
+                plan_output = st.text_area("خطة المشاهد والإنتاج", height=160, key=f"vp_plan_output_{active_vp['id']}") if cfg['scene_plan_enabled'] else ""
+                shorts_output = st.text_area("مقاطع Shorts / Reels", height=140, key=f"vp_shorts_output_{active_vp['id']}") if cfg['short_clips_enabled'] else ""
+                kit_output = st.text_area("عناوين ووصف وغلاف وكلمات مفتاحية", height=120, key=f"vp_kit_output_{active_vp['id']}")
+                script_submit = st.form_submit_button("حفظ المخرجات كلٌ في إصدار مستقل", type="primary")
+            if script_submit:
+                try:
+                    saved_count = 0
+                    for kind, content, title in (("script", script_output, "السكريبت المصري"), ("production_plan", plan_output, "خطة المشاهد والإنتاج"), ("short_clips", shorts_output, "مقاطع Shorts / Reels"), ("publishing_kit", kit_output, "حزمة النشر")):
+                        if content.strip():
+                            video_storyteller_mod.save_artifact(active_vp, kind, content, title=title); saved_count += 1
+                    if not saved_count: raise ValueError("الصق مخرجاً واحداً على الأقل قبل الحفظ")
+                    persist(); st.success(f"اتحفظ {saved_count} مخرج/مخرجات بإصدارات مستقلة."); st.rerun()
+                except Exception as exc: st.error(str(exc))
+
+            st.markdown("##### 3. إعادة كتابة السكريبت من غير إعادة البحث")
+            previous_script = video_storyteller_mod.latest_artifact(active_vp, "script")
+            if previous_script:
+                with st.form(f"vp_revision_{active_vp['id']}"):
+                    revision_note = st.text_area("إيه اللي عايز تغيره؟", placeholder="مثال: خلي المقدمة أقوى، قلل التكرار، زوّد شرح أثر الموضوع على مصر...")
+                    revision_go = st.form_submit_button("إنشاء برومبت إعادة الكتابة")
+                if revision_go:
+                    try:
+                        rev_prompt = video_storyteller_mod.revision_prompt(active_vp, previous_script.get("content", ""), revision_note)
+                        st.session_state[f"vp_revision_prompt_{active_vp['id']}"] = rev_prompt
+                    except Exception as exc: st.error(str(exc))
+                if st.session_state.get(f"vp_revision_prompt_{active_vp['id']}"):
+                    st.text_area("برومبت إعادة الكتابة", value=st.session_state[f"vp_revision_prompt_{active_vp['id']}"], height=180, key=f"vp_revision_view_{active_vp['id']}")
+                    st.download_button("⬇️ تنزيل برومبت إعادة الكتابة", st.session_state[f"vp_revision_prompt_{active_vp['id']}"], file_name="marsad_script_revision.txt", mime="text/plain", key=f"vp_revision_dl_{active_vp['id']}")
+            else:
+                st.info("احفظ أول نسخة من السكريبت حتى يظهر مسار إعادة الكتابة.")
+
+            st.markdown("##### سجل المخرجات والإصدارات")
+            if active_vp.get("artifacts"):
+                for artifact in reversed(active_vp["artifacts"][-20:]):
+                    with st.expander(f"{artifact.get('title')} · إصدار {artifact.get('version')} · {artifact.get('created_at','')[:16]}"):
+                        st.text_area("المحتوى المحفوظ", value=artifact.get("content", ""), height=180, key=f"vp_artifact_{artifact['id']}")
+                        st.download_button("تنزيل هذا الإصدار", artifact.get("content", ""), file_name=f"{artifact.get('kind')}_v{artifact.get('version')}.txt", mime="text/plain", key=f"vp_artifact_dl_{artifact['id']}")
+            else:
+                st.info("لسه مفيش مخرجات محفوظة للمشروع.")
+            st.caption("ملاحظة: المحرك ينشئ البرومبتات ويحفظ المخرجات التي تلصقها. لا يولّد الفيديو أو الصور تلقائياً، ولا يفتح روابط المصادر من تلقاء نفسه.")
+
     st.markdown("#### 📦 ملفات القضايا والتجميعات الذكية")
     st.caption("جهّز حزمة مستقلة من لقطة مواد القضية الحالية، واختر الخيوط والبرومبت والنموذج المستهدف. إنشاء الحزمة لا يرسل أي طلب مدفوع تلقائياً.")
     thread_options = list(links_mod.THREADS.keys()) + [x.get("name", "") for x in S().get("custom_threads", []) if x.get("name")]
@@ -4843,6 +5126,10 @@ def render_research_casebook():
                                  if case.get("id") not in {x.get("case_a"), x.get("case_b")}]
             S()["intel_case_files"] = [x for x in S().get("intel_case_files", [])
                                        if x.get("case_id") != case.get("id")]
+            S()["research_batches"] = [x for x in S().get("research_batches", [])
+                                       if x.get("case_id") != case.get("id")]
+            S()["video_projects"] = [x for x in S().get("video_projects", [])
+                                      if x.get("case_id") != case.get("id")]
             persist(); st.session_state.pop("research_case_active", None); st.success("تم حذف الملف وروابطه."); st.rerun()
 
 

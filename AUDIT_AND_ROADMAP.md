@@ -258,3 +258,15 @@ The user explicitly deprioritized and requested removal of the backup/restore wo
 - Saved Phase 8.20 dossiers are referenced only when their prior-case match explicitly names the exact case ID.
 - The cumulative update prompt is manual and copyable; no provider request or spend occurs.
 - Build validation: 116 unit tests passed after Phase 8.21; Python compilation passed. Streamlit browser/Gist live tests and GitHub push/deployment remain unverified.
+
+
+## Phase 8.25 status
+Task dispatch audit trail is implemented. It records requests initiated by the app and GitHub's immediate dispatch response. It is not a centralized queue and does not receive workflow completion callbacks. GitHub Actions remains authoritative for execution status. Gist read/merge/patch still has a race window because it lacks an atomic CAS operation in this implementation.
+
+
+## Phase 8.26 status
+Resumable research batching is implemented for materials already attached to an active research case. It preserves source IDs, URLs, publisher/date metadata, available snippets/text, per-batch outputs, and a final synthesis prompt. It does not fetch article URLs or invoke an AI provider. Text/output limits are explicit in RELEASE_PHASE8_26.md. Live Streamlit, Gist, and external-model workflows still require deployment/user-side validation.
+
+
+## Phase 8.27 status
+Egyptian Arabic video production prompt engine is implemented as a manual-first workflow. It stores projects and separately versioned reading sheets, scripts, production plans, short clips, and publishing kits against research cases. Defaults: political analysis, 10 minutes, sharp tone, scene plan and short clips enabled. It does not generate media or call AI APIs. Live Streamlit, Gist, and GitHub deployment still require external validation.
