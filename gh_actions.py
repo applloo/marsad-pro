@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """تشغيل «التقرير اليومي» (GitHub Actions) من داخل التطبيق بزر، وعرض حالة آخر تشغيل.
-يحتاج سرّ ACTIONS_TOKEN (توكن بصلاحية workflow) واختيارياً GH_REPO (افتراضي applloo/marsad-news) وGH_BRANCH (main)."""
+يحتاج سرّ ACTIONS_TOKEN (توكن بصلاحية workflow) واختيارياً GH_REPO (افتراضي applloo/marsad-pro) وGH_BRANCH (main)."""
 import requests
 
 WORKFLOW = "daily.yml"
-DEFAULT_REPO = "applloo/marsad-news"
+DEFAULT_REPO = "applloo/marsad-pro"
 
 
 def _h(token):
