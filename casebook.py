@@ -46,7 +46,10 @@ def add_material(case, article, material_type="خبر", stance="", note=""):
         "outlet": article.get("outlet") or article.get("source") or article.get("domain") or domain(url) or "غير محدد",
         "domain": article.get("domain") or domain(url), "date": article.get("date") or article.get("seendate") or "",
         "url": url, "text": article.get("text") or article.get("full_text") or article.get("summary") or article.get("snip_ar") or "",
-        "stance": stance, "note": note, "added_at": now_iso(),
+        "stance": stance, "speaker": article.get("speaker") or article.get("actor") or "",
+        "actor": article.get("actor") or article.get("speaker") or "",
+        "position": article.get("position") or stance or "",
+        "note": note, "added_at": now_iso(),
     }
     case["materials"].append(item)
     case["updated_at"] = now_iso()

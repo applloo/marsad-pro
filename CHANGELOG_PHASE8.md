@@ -243,3 +243,35 @@
 - Added candidate thread clustering with provenance and caution labels.
 - Added six-hour search-all period option. No paid AI API calls or paywall bypasses.
 - Validation: 171 tests passed; Streamlit browser and live crawl not run.
+
+## Phase 8.30 — Article Reader Quality & Extraction Transparency
+- Added `article_reader.py` for cautious article-text quality signals, reading-time estimates, summary eligibility, and normalized metadata display.
+- Reader now distinguishes insufficient text, possibly partial extraction, and readable-but-unverified text. It never labels a long article as certainly complete.
+- Reader displays author/date/extraction method with explicit unavailable states instead of silently omitting unknown metadata.
+- Prevents the on-demand key-sentence summary when the extracted text is too short to support a useful summary.
+- No paid API calls, paywall bypass, or backup/restore features added.
+
+## Phase 8.31
+- أضيف استيراد نتائج البحث الحالية مباشرة إلى ملف القضية النشط.
+- أضيف توحيد الروابط وإزالة التكرار مع حفظ بيانات المصدر والتاريخ والكاتب والمقتطف.
+- أضيف إنشاء دفعات بحث تلقائية للمواد الجديدة وربطها بملف القضية.
+- لا توجد مكالمات AI/API مدفوعة في عملية الاستيراد.
+
+## Phase 8.32 — Early Warning & Change Monitoring
+- Extended early-warning baselines to materials, claims, and timeline events.
+- Added before/after change detection, explicit actor-position review flags, cautious triage, and expanded reports/prompts.
+- Added speaker/actor and attributed position fields to manual material entry.
+- 188 tests passed; see `PHASE8_32_TEST_REPORT_AR.md`.
+
+## Phase 8.33 — Narrative Comparison & Evidence Matrix
+- Added source-domain grouping and independence caveats.
+- Added text-based comparison candidates, evidence review questions, JSON export, and analysis prompt in each research case.
+- Explicitly prevents headline-only content from being treated as claim-level contradiction evidence.
+- No paid API or external network calls.
+
+## Phase 8.34
+- Article-to-script prompt generation for one result or manually selected multi-article groups.
+- Open-coverage alternative search links for paid/limited-access articles.
+- Prompt generation from saved articles.
+- Improved search-result signature and explicit recovery guidance.
+- 196 tests passed.

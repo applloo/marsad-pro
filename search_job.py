@@ -158,6 +158,12 @@ def search_writers(key, codes, terms, cfg, custom_writers, log):
     days = float(cfg.get("days") or 3)
     items, notes = core.fetch_writers(ws, max(1, int(-(-days // 1))))
     core.translate_titles(items)
+    # Apply the same exact date window and Arabic card preparation used by the other scopes.
+    end = datetime.now(timezone.utc)
+    items = intelligence_pipeline_mod.filter_window(items, days * 24, now=end)
+    items = intelligence_pipeline_mod.prepare_cards(
+        items, translate_text=lambda texts: core._batch_tr(texts, "ar")
+    )
     joiner = cfg.get("joiner") or "OR"
     matchers = []
     if terms:

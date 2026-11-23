@@ -32,8 +32,16 @@ def window_bounds(hours, *, now=None):
     end = utc_dt(now) or datetime.now(timezone.utc)
     return end - timedelta(hours=float(hours)), end
 
+def item_datetime(item):
+    """Return the first parseable timestamp, not merely the first non-empty field."""
+    for key in ('seendate', 'published_at', 'published', 'date', 'updated_at'):
+        dt = utc_dt(item.get(key))
+        if dt is not None:
+            return dt, key
+    return None, None
+
 def in_window(item, start, end):
-    dt = utc_dt(item.get('seendate') or item.get('published_at') or item.get('date'))
+    dt, _ = item_datetime(item)
     return dt is None or (start <= dt <= end)
 
 def filter_window(items, hours, *, now=None):
@@ -42,12 +50,14 @@ def filter_window(items, hours, *, now=None):
     out=[]
     for item in items or []:
         row=dict(item)
-        dt=utc_dt(row.get('seendate') or row.get('published_at') or row.get('date'))
+        dt, date_field = item_datetime(row)
         if dt is None:
             row['date_window_status']='unknown_date'
+            row['date_window_field']=None
             out.append(row)
         elif start <= dt <= end:
             row['date_window_status']='within_window'
+            row['date_window_field']=date_field
             out.append(row)
     return out
 

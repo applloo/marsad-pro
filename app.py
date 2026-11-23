@@ -15,6 +15,8 @@ from urllib.parse import quote, unquote, urlparse
 import streamlit as st
 
 import core
+import article_reader as article_reader_mod
+import article_script_prompts as article_script_prompts_mod
 import dossiers as dossiers_mod
 import analysis_lab as analysis_lab_mod
 import analysis_packages as analysis_packages_mod
@@ -30,6 +32,7 @@ import intelligence_pipeline as intelligence_pipeline_mod
 import video_storyteller as video_storyteller_mod
 import prompt_workbench as prompt_workbench_mod
 import casebook as casebook_mod
+import case_intake as case_intake_mod
 import case_links as case_links_mod
 import early_warning as early_warning_mod
 import stance_scenarios as stance_scenarios_mod
@@ -37,6 +40,7 @@ import intel
 import paid_radar as paid_radar_mod
 import source_intelligence as source_intel_mod
 import entity_intelligence as entity_intel_mod
+import narrative_analysis as narrative_analysis_mod
 import case_intelligence as case_intel_mod
 import user_guide as user_guide_mod
 import github_sync as github_sync_mod
@@ -609,15 +613,14 @@ def reader_page():
                    "أو استخدم زرار «مترجمة (ترجمة جوجل)» فوق في التاب.")
         if st.button("🔁 أعد الترجمة", key="rd_retry"):
             st.rerun()
-    trunc_alt = False
-    tail = art["text"][-300:].lower()
-    if len(art["text"]) < 1800 or re.search(r"loading\.\.\.|subscribe|log in to|טוען|למנויים|הרשמה", tail):
-        st.warning(
-            f"⚠️ النص الذي وصل التطبيق قصير ({len(art['text'])} حرفاً) ويبدو أنه المقدّمة المتاحة للزوار فقط؛ "
-            "الموقع يخفي بقية المقال خلف اشتراك أو تحميل بالجافاسكربت، ولا يمكن للتطبيق تجاوز ذلك. "
-            "لقراءته كاملاً: افتح الرابط الأصلي بحسابك المشترك، أو اقرأ التغطية البديلة المفتوحة أسفل الصفحة."
-        )
-        trunc_alt = True
+    extraction = article_reader_mod.inspect_article(art.get("text", ""))
+    trunc_alt = extraction["status"] != "usable_unverified"
+    if extraction["status"] == "insufficient":
+        st.warning(f"⚠️ {extraction['detail']} ({extraction['chars']} حرفاً). جرّب فتح الأصلية أو التغطية البديلة المفتوحة.")
+    elif extraction["status"] == "possibly_partial":
+        st.warning(f"⚠️ {extraction['label']}: {extraction['detail']} ({extraction['chars']} حرفاً). لا يتجاوز التطبيق الاشتراكات أو الحجب.")
+    else:
+        st.info(f"📄 {extraction['label']}. {extraction['words']} كلمة تقريباً · {extraction['reading_minutes']} دقيقة قراءة. {extraction['detail']}")
     via = art.get("via") or "غير معروفة (نسخة محفوظة من قبل)"
     if via.startswith("الفتح المباشر"):
         st.success(f"🟢 طريقة جلب المقال: {via}")
@@ -625,12 +628,10 @@ def reader_page():
         st.info(f"🟡 طريقة جلب المقال: {via} — لأن الموقع رفض فتحه مباشرة. (النص قد يختلف شكله قليلاً عن الأصل.)")
     if core._host(url) and core._host(url) != "news.google.com":
         st.markdown(f"📰 **الجريدة والبلد:** {src_label(core._host(url), with_domain=False)}", unsafe_allow_html=True)
-    if art.get("authors") and not wr:
-        st.markdown("✍️ **الكاتب (من توقيع المقال):** " + html.escape("، ".join(art["authors"])))
-    elif not wr and not art.get("authors"):
-        st.caption("✍️ اسم الكاتب مش ظاهر في بيانات الصفحة اللي وصلت للتطبيق. شوفه في الصفحة الاصلية.")
-    if art["date"]:
-        st.markdown(f"🕒 **تاريخ النشر (حسب بيانات المصدر):** {art['date']}")
+    for _meta_label, _meta_value in article_reader_mod.metadata_rows(art):
+        if _meta_label == "الكاتب" and wr:
+            _meta_value = wr
+        st.caption(f"ℹ️ **{_meta_label}:** {_meta_value}")
     if seen:
         st.markdown(f"🛰️ **وقت رصد المقال (توقيت القاهرة):** {fmt_seen(seen)}")
 
@@ -638,9 +639,13 @@ def reader_page():
         st.markdown(f"### {title_ar}")
         st.markdown(f"<div class='ltr' dir='ltr'>{html.escape(title)}</div>", unsafe_allow_html=True)
 
-    if st.button("📝 ملخص المقال في نقاط"):
-        with st.spinner("جارٍ التلخيص…"):
-            st.info(core.summarize(url))
+    if extraction["summary_allowed"]:
+        if st.button("📝 ملخص المقال في نقاط", key="rd_summary"):
+            with st.spinner("جارٍ استخراج أهم الجمل من النص المتاح وترجمتها…"):
+                st.info(core.summarize(url))
+        st.caption("الملخص المجاني يستخرج أهم الجمل من النص الذي أمكن الوصول إليه، وليس حكماً على اكتمال المقال.")
+    else:
+        st.warning("لن نقترح ملخصاً آلياً لهذا النص لأنه أقصر من الحد الأدنى المناسب؛ لتجنب ملخص مضلل.")
 
     copy_block(url, title, title_ar, art, body_ar)
 
@@ -1209,7 +1214,12 @@ RES_FILE = "marsad_results.json"
 
 def _res_sig(d):
     its = d.get("items") or []
-    return [len(its), its[0].get("url", "") if its else "", len(d.get("summaries") or {}), len(d.get("used") or [])]
+    # Include query metadata and a compact digest of URLs so a new search with
+    # the same result count is still recognized and persisted.
+    urls = "\n".join(str(x.get("url", "")) for x in its[:200] if isinstance(x, dict))
+    digest = hashlib.sha256(urls.encode("utf-8")).hexdigest()[:16]
+    return [len(its), digest, str(d.get("query") or d.get("keyword") or ""),
+            len(d.get("summaries") or {}), len(d.get("used") or [])]
 
 
 if PERSIST and "_res_loaded" not in st.session_state:
@@ -1534,7 +1544,16 @@ def live_html(items, hl):
 def render_results(key):
     data = st.session_state.get(f"res_{key}")
     if data is None:
+        if PERSIST:
+            st.info("لا توجد نتائج محمّلة في هذه الجلسة. يمكنك استرجاع آخر نتائج البحث المحفوظة من الأرشيف.")
+            if st.button("↻ استرجاع نتائج البحث المحفوظة", key=f"restore_results_{key}"):
+                n_restored = reload_results()
+                st.success(f"تم استرجاع {n_restored} مجموعة نتائج محفوظة.")
+                st.rerun()
+        else:
+            st.info("نتائج البحث تظل في الجلسة الحالية. لتظل متاحة بعد إغلاق التطبيق أو فتحه من جهاز آخر، فعّل التخزين الدائم عبر GitHub Gist.")
         return
+    st.caption("📌 نتائج هذا التاب تظل محفوظة عند التنقل بين أقسام التطبيق، ولا تُستبدل إلا عند إجراء بحث جديد في التاب نفسه. ومع تفعيل GitHub Gist يمكن استرجاعها بعد إعادة فتح التطبيق.")
     if data.get("partial"):
         st.warning("⏹ توقّف البحث قبل اكتماله — هذه هي النتائج التي وُجدت حتى الآن (وقد لا تشمل فحص النصوص كاملاً).")
     for err in data["errors"]:
@@ -1591,6 +1610,13 @@ def render_results(key):
         url = a.get("url", "")
         with st.container(border=True):
             st.markdown(card_html(a), unsafe_allow_html=True)
+            _article_key = hashlib.sha256(str(url or f"{key}_{i}").encode("utf-8")).hexdigest()[:12]
+            st.checkbox("☑️ ضمّ المقال إلى البرومبت التحليلي الجماعي", key=f"script_pick_{_article_key}")
+            _act1, _act2 = st.columns(2)
+            if _act1.button("🎬 توليد برومبت سكريبت لهذا المقال", key=f"script_one_{_article_key}", use_container_width=True):
+                st.session_state["article_prompt_active"] = {"title": a.get("title_ar") or a.get("title") or "مقال", "prompt": article_script_prompts_mod.build_script_prompt([a])}
+            if _act2.button("🔎 بدائل مجانية مفتوحة", key=f"alt_one_{_article_key}", use_container_width=True):
+                st.session_state["article_alt_active"] = {"title": a.get("title_ar") or a.get("title") or "مقال", "links": article_script_prompts_mod.alternative_search_links(a)}
             if a.get("summary_ar"):
                 st.markdown("**📝 ملخص/مقتطف مترجم:** " + a["summary_ar"])
                 if a.get("summary_status") != "translated_snippet":
@@ -1617,11 +1643,59 @@ def render_results(key):
                 st.caption("✅ محفوظ — تجده في تاب «المحفوظات»")
             else:
                 st.button("💾 حفظ للقراءة لاحقاً", key=f"save_{key}_{i}", on_click=save_item, args=(a, key))
+    _selected_articles = []
+    for _idx, _article in enumerate(view_items[:n_show]):
+        _u = _article.get("url", "")
+        _ak = hashlib.sha256(str(_u or f"{key}_{_idx}").encode("utf-8")).hexdigest()[:12]
+        if st.session_state.get(f"script_pick_{_ak}"):
+            _selected_articles.append(_article)
+    if _selected_articles:
+        st.info(f"تم اختيار {len(_selected_articles)} مقال/مقالات للبرومبت الجماعي.")
+        if st.button(f"🧠 توليد برومبت تحليلي وسكريبت للمقالات المحددة ({len(_selected_articles)})", key=f"script_many_{key}", use_container_width=True):
+            st.session_state["article_prompt_active"] = {"title": f"تحليل مجموعة من {len(_selected_articles)} مواد", "prompt": article_script_prompts_mod.build_script_prompt(_selected_articles)}
+    _active_prompt = st.session_state.get("article_prompt_active")
+    if _active_prompt:
+        with st.expander("🧠 البرومبت الجاهز للإرسال إلى الذكاء الاصطناعي", expanded=True):
+            st.caption(_active_prompt.get("title", "برومبت تحليلي"))
+            st.text_area("راجع البرومبت وانسخه إلى ChatGPT أو أي نموذج آخر", _active_prompt["prompt"], height=360, key=f"article_prompt_text_{key}")
+            st.download_button("⬇️ تنزيل البرومبت TXT", _active_prompt["prompt"], file_name="marsad_article_script_prompt.txt", mime="text/plain", key=f"article_prompt_dl_{key}")
+    _active_alt = st.session_state.get("article_alt_active")
+    if _active_alt:
+        with st.expander("🔎 مسارات البحث عن تغطيات مفتوحة بديلة", expanded=True):
+            st.caption("هذه روابط بحث قانونية عن تغطيات مستقلة أو مقابلات أو تصريحات أصلية. لا تضمن وجود نسخة مجانية مكافئة للتقرير المدفوع.")
+            for _lnk in _active_alt.get("links", []):
+                st.markdown(f"**{_lnk['label']}**  ·  [Google]({_lnk['google']})  ·  [Google News]({_lnk['news']})")
     if total_items > n_show:
         st.caption(f"معروض {n_show} من {total_items} نتيجة (بنعرضهم على دفعات عشان الصفحة تفضل خفيفة).")
         if st.button(f"⬇️ اعرض 20 كمان (باقي {total_items - n_show})", key=f"morebtn_{key}", use_container_width=True):
             st.session_state[f"more_{key}"] = n_show + 20
             st.rerun()
+
+
+def render_global_results_dock():
+    """Persistent, cross-section dock for the latest result sets loaded in this app session."""
+    sets = [(k[4:], v) for k, v in st.session_state.items()
+            if k.startswith("res_") and isinstance(v, dict) and isinstance(v.get("items"), list) and v.get("items")]
+    if not sets:
+        return
+    labels = {f"{name} · {len(data.get('items', []))} نتيجة · {data.get('saved_at', 'جلسة حالية')[:16]}": (name, data)
+              for name, data in sorted(sets, key=lambda pair: pair[1].get("saved_at", ""), reverse=True)}
+    with st.expander(f"📌 درج نتائج البحث المحفوظة · {sum(len(v.get('items', [])) for _, v in sets)} نتيجة متاحة من {len(sets)} تبويبات", expanded=False):
+        st.caption("الدرج ده ظاهر في كل أقسام التطبيق. البحث الجديد يستبدل نتائج التبويب نفسه فقط؛ باقي التبويبات تظل كما هي. الاسترجاع بعد إغلاق التطبيق يعتمد على تفعيل GitHub Gist.")
+        chosen = st.selectbox("اعرض نتائج أي تبويب؟", list(labels), key="global_results_dock_select")
+        _name, _data = labels[chosen]
+        for _idx, _item in enumerate(_data.get("items", [])[:30]):
+            st.markdown(card_html(_item), unsafe_allow_html=True)
+            _url = _item.get("url", "")
+            if _url and any(x.get("url") == _url for x in S().get("saved", [])):
+                st.caption("✅ محفوظ للقراءة لاحقاً")
+            elif _url:
+                st.button("💾 حفظ للقراءة لاحقاً", key=f"global_save_{hashlib.sha256(_url.encode()).hexdigest()[:12]}",
+                          on_click=save_item, args=(_item, _name))
+
+
+# درج عام يظهر خارج التبويبات، فتظل النتائج متاحة أثناء التنقل بين أقسام التطبيق.
+render_global_results_dock()
 
 
 def all_entries(key, groups):
@@ -2741,11 +2815,18 @@ def render_saved():
                 "📝 ملاحظتي (لربط الأحداث ببعضها)", value=it.get("note", ""), key=f"note_{h}", height=80,
                 on_change=set_note, args=(it["url"], f"note_{h}"),
             )
-            b1, b2 = st.columns(2)
+            b1, b2, b3 = st.columns(3)
             if b1.button("📝 ملخص سريع للمقال", key=f"svsum_{h}"):
                 with st.spinner("جارٍ التلخيص…"):
                     sums[it["url"]] = core.summarize(it["url"])
-            b2.button("🗑️ حذف من المحفوظات", key=f"del_{h}", on_click=delete_item, args=(it["url"],))
+            if b2.button("🎬 برومبت سكريبت", key=f"svscript_{h}"):
+                st.session_state["article_prompt_active"] = {"title": it.get("title_ar") or it.get("title") or "مقال محفوظ", "prompt": article_script_prompts_mod.build_script_prompt([it])}
+            b3.button("🗑️ حذف من المحفوظات", key=f"del_{h}", on_click=delete_item, args=(it["url"],))
+            _sv_prompt = st.session_state.get("article_prompt_active")
+            if _sv_prompt:
+                with st.expander("🧠 برومبت السكريبت الجاهز", expanded=False):
+                    st.text_area("البرومبت", _sv_prompt["prompt"], height=300, key=f"sv_prompt_{h}")
+                    st.download_button("تنزيل البرومبت", _sv_prompt["prompt"], file_name="marsad_article_script_prompt.txt", key=f"sv_prompt_dl_{h}")
             listen_widget(it, f"sv_{h}")
             if it["url"] in sums:
                 st.info(sums[it["url"]])
@@ -3559,7 +3640,7 @@ def render_dossiers_cfg(P="pol"):
 SEARCH_CFG, SEARCH_STATUS = "marsad_search_cfg.json", "marsad_search_job.json"
 SEARCH_SCOPES = {"il": "🇮🇱 المصادر الإسرائيلية", "us": "🇺🇸 المصادر الأمريكية", "uk": "🇬🇧 المصادر البريطانية",
                  "rg": "🌍 تركيا وإيران وإثيوبيا", "eg": "🇪🇬 الشأن المصري", "wr": "✍️ الكتّاب الأجانب", "wa": "🇸🇦 الكتّاب العرب"}
-PERIOD_OPTS = {"آخر 6 ساعات": 0.25, "آخر 12 ساعة": 0.5, "آخر 24 ساعة": 1, "آخر يومين": 2, "آخر 3 أيام": 3, "آخر 5 أيام": 5, "آخر 7 أيام": 7}
+PERIOD_OPTS = {"آخر 6 ساعات": 0.25, "آخر 12 ساعة": 0.5, "آخر 24 ساعة": 1, "آخر يومين": 2, "آخر 3 أيام": 3, "آخر 5 أيام": 5, "آخر 7 أيام": 7, "آخر 14 يوماً": 14, "آخر 30 يوماً": 30}
 
 
 def _period_label(d):
@@ -3926,6 +4007,38 @@ def render_research_casebook():
     m3.metric("الأحداث", len(events))
     m4.metric("المصادر", len({x.get('domain') or x.get('outlet') for x in materials if x.get('domain') or x.get('outlet')}))
 
+    st.markdown("#### ⚡ استيراد نتائج البحث تلقائياً إلى ملف القضية")
+    st.caption("اختر مجموعة نتائج محفوظة من جلسة البحث الحالية. سيُضاف الجديد فقط، مع الاحتفاظ بالرابط والمصدر والتاريخ، ويمكن تجهيز دفعات بحث منها دون استدعاء أي نموذج مدفوع.")
+    recent_result_sets = {}
+    for state_key, state_value in list(st.session_state.items()):
+        if str(state_key).startswith("res_") and isinstance(state_value, dict) and isinstance(state_value.get("items"), list) and state_value.get("items"):
+            result_label = f"{str(state_key)[4:]} · {len(state_value['items'])} نتيجة"
+            recent_result_sets[result_label] = state_value
+    if recent_result_sets:
+        chosen_result_label = st.selectbox("مجموعة نتائج البحث", list(recent_result_sets), key=f"case_intake_results_{case['id']}")
+        selected_result_data = recent_result_sets[chosen_result_label]
+        selected_result_items = selected_result_data.get("items", [])
+        st.caption(f"المتاح للاستيراد: {len(selected_result_items)} نتيجة. التجميع لا يعني التحقق من صحة الأخبار أو اكتمال المقالات.")
+        intake_col1, intake_col2 = st.columns([1, 1])
+        intake_type = intake_col1.selectbox("تصنيف المواد المستوردة", casebook_mod.MATERIAL_TYPES, key=f"case_intake_type_{case['id']}")
+        intake_limit = intake_col2.selectbox("الحد الأقصى للاستيراد", [25, 50, 100, 200, 300], index=2, key=f"case_intake_limit_{case['id']}")
+        if st.button("📥 استيراد النتائج وإنشاء دفعات البحث", type="primary", key=f"case_intake_run_{case['id']}", use_container_width=True):
+            try:
+                intake_result = case_intake_mod.import_search_results(case, selected_result_items, material_type=intake_type, max_items=intake_limit)
+                new_materials = intake_result["added"]
+                created_batch = case_intake_mod.batch_from_materials(case, new_materials, batch_size=8) if new_materials else None
+                if created_batch:
+                    S().setdefault("research_batches", []).insert(0, created_batch)
+                    S()["research_batches"] = S()["research_batches"][:30]
+                if new_materials:
+                    persist()
+                st.success(f"تمت إضافة {len(new_materials)} مادة جديدة، وتجاوز {intake_result['skipped']} مكررة." + (f" وتم تجهيز {len(created_batch['chunks'])} دفعة بحث." if created_batch else " لا توجد مواد جديدة لتقسيمها."))
+                st.rerun()
+            except Exception as exc:
+                st.error(f"تعذر استيراد النتائج: {type(exc).__name__}: {exc}")
+    else:
+        st.info("نفّذ بحثاً أولاً، وستظهر مجموعات النتائج هنا لاستيرادها مباشرة إلى ملف القضية.")
+
     st.markdown("#### 📥 إضافة مواد إلى الملف")
     pool = list(_dos_pool().values())
     pool += list(S().get("saved", []))
@@ -3963,15 +4076,59 @@ def render_research_casebook():
             mm_url = st.text_input("الرابط الأصلي")
             mm_text = st.text_area("النص أو المقتطف المتاح", height=140)
             mm_stance = st.text_input("الموقف أو الزاوية (اختياري)")
+            mm_actor = st.text_input("الطرف / المتحدث صاحب الموقف (مهم لمقارنة التحولات)", placeholder="مثال: وزارة الخارجية الإيرانية")
+            mm_position = st.text_input("الموقف المحدد المنسوب للطرف (اختياري)", placeholder="مثال: يرفض وقف التخصيب")
             mm_save = st.form_submit_button("إضافة المادة إلى الملف")
         if mm_save:
             manual = {"title": mm_title, "title_ar": mm_title, "writer": mm_author, "outlet": mm_outlet,
-                      "date": mm_date, "url": mm_url, "domain": casebook_mod.domain(mm_url), "text": mm_text}
+                      "date": mm_date, "url": mm_url, "domain": casebook_mod.domain(mm_url), "text": mm_text,
+                      "speaker": mm_actor, "actor": mm_actor, "position": mm_position}
             if not (mm_title.strip() or mm_text.strip() or mm_url.strip()):
                 st.warning("أدخل عنواناً أو نصاً أو رابطاً للمادة.")
             else:
                 casebook_mod.add_material(case, manual, mm_type, mm_stance)
                 persist(); st.success("تمت إضافة المادة."); st.rerun()
+
+    st.markdown("#### ⚖️ مختبر مقارنة الروايات ومصفوفة الأدلة")
+    st.caption("يقارن المواد المحفوظة في هذا الملف، ويعرض نقاط التقارب والاختلاف المرشحة. لا يقرر آلياً أي رواية صحيحة.")
+    if len(materials) < 2:
+        st.info("أضف مادتين على الأقل، ويفضل أن يتوفر نص أو مقتطف لكل مادة، لبدء المقارنة.")
+    else:
+        if st.button("⚖️ بناء خريطة الروايات ومقارنة المصادر", key=f"narrative_compare_{case['id']}", type="primary"):
+            try:
+                report = narrative_analysis_mod.compare_narratives(materials, claims)
+                st.session_state[f"narrative_report_{case['id']}"] = report
+                st.success("تم بناء خريطة المقارنة من المواد المحفوظة. راجع المرشحات قبل اعتماد أي استنتاج.")
+            except Exception as exc:
+                st.error(f"تعذرت المقارنة: {type(exc).__name__}: {exc}")
+        narrative_report = st.session_state.get(f"narrative_report_{case['id']}")
+        if narrative_report:
+            n1, n2, n3 = st.columns(3)
+            n1.metric("المصادر/مجموعات النطاق", narrative_report.get("source_count", 0))
+            n2.metric("النطاقات المختلفة", narrative_report.get("distinct_domains", 0))
+            n3.metric("مرشحات المقارنة", len(narrative_report.get("comparison_candidates", [])))
+            st.caption(f"مواد الملف: {narrative_report.get('material_count', 0)} · مواد لها نص قابل للمقارنة: {narrative_report.get('usable_text_count', 0)}")
+            with st.expander("🗞️ خريطة المصادر", expanded=False):
+                for src in narrative_report.get("sources", []):
+                    st.markdown(f"**{src.get('source')}** · {src.get('domain') or 'النطاق غير متاح'} · {len(src.get('items', []))} مادة")
+                    st.caption(src.get("independence_note", ""))
+            candidates = narrative_report.get("comparison_candidates", [])
+            if not candidates:
+                st.info("لم تظهر مرشحات مقارنة نصية كافية. هذا لا يثبت اتفاق المصادر أو غياب الاختلافات.")
+            for idx, item in enumerate(candidates[:40], 1):
+                with st.expander(f"{idx}. {item.get('kind')} · تشابه مفردات {item.get('overlap', 0):.0%} · {item.get('source_a')} / {item.get('source_b')}", expanded=False):
+                    st.markdown(f"**المادة الأولى:** {item.get('title_a')} · {item.get('date_a')}  \n{item.get('text_a','')[:1000]}")
+                    if item.get("url_a"): st.markdown(f"[فتح المصدر الأول]({item['url_a']})")
+                    st.markdown(f"**المادة الثانية:** {item.get('title_b')} · {item.get('date_b')}  \n{item.get('text_b','')[:1000]}")
+                    if item.get("url_b"): st.markdown(f"[فتح المصدر الثاني]({item['url_b']})")
+                    st.caption(f"مؤشر لغوي: {item.get('polarity_a')} مقابل {item.get('polarity_b')} · مفردات مشتركة: {', '.join(item.get('shared_terms', []))}")
+                    st.warning(item.get("caveat", "مرشح يحتاج مراجعة بشرية."))
+                    for question in item.get("review_questions", []): st.write("• " + question)
+            for limitation in narrative_report.get("limitations", []): st.caption("حدود التحليل: " + limitation)
+            comparison_prompt = narrative_analysis_mod.build_comparison_prompt(case, narrative_report)
+            dl1, dl2 = st.columns(2)
+            dl1.download_button("⬇️ تنزيل تقرير المقارنة JSON", json.dumps(narrative_report, ensure_ascii=False, indent=2), file_name=f"narrative_comparison_{case['id']}.json", mime="application/json", key=f"narrative_json_{case['id']}")
+            dl2.download_button("⬇️ تنزيل برومبت التحليل", comparison_prompt, file_name=f"narrative_analysis_{case['id']}.txt", key=f"narrative_prompt_{case['id']}")
 
     st.markdown("#### 🧾 سجل الادعاءات والأدلة")
     st.caption("سجّل ما تريد اختباره، وحدد هل هو واقعة أم ادعاء منسوب أم تفسير أو توقع، ثم دوّن حالة الدليل. هذا السجل لا يتحقق آلياً من صحة الادعاء.")
@@ -5302,14 +5459,14 @@ def render_stance_scenario_center(case):
 
 
 def render_early_warning_center():
-    """مركز الإنذار المبكر: مقارنة المواد الجديدة بخط أساس محفوظ."""
+    """مركز الإنذار المبكر: مقارنة تراكمية للتغيرات في ملفات القضايا."""
     st.divider()
     st.markdown("### 🚨 مركز الإنذار المبكر والتحليل الاستراتيجي")
-    st.caption("يرصد ما أُضيف منذ آخر فحص، والكيانات الجديدة، والإشارات اللغوية. لا يصدر حكماً آلياً بأن موقفاً سياسياً تغيّر.")
+    st.caption("يقارن المواد والادعاءات والأحداث والمواقف المسجلة بخط الأساس السابق. درجات المتابعة أداة فرز وليست حكماً استخباراتياً أو إثباتاً لوقوع حدث.")
     cases = S().get("research_cases", [])
     state = S().setdefault("early_warning", {"baselines": {}, "reports": [], "last_scan": ""})
     c1, c2 = st.columns([2, 1])
-    c1.caption("أول فحص لكل ملف ينشئ خط أساس فقط؛ الإنذارات تظهر عند إضافة مواد بعد ذلك.")
+    c1.caption("أول فحص ينشئ خط أساس فقط. بعد إضافة مواد أو تعديل سجل الادعاءات والأحداث، أعد الفحص لرصد الفروق.")
     if c2.button("🔍 افحص التغييرات الآن", key="early_warning_scan", type="primary", use_container_width=True):
         updated, alerts, initialized = early_warning_mod.scan_cases(cases, state)
         S()["early_warning"] = updated
@@ -5319,24 +5476,36 @@ def render_early_warning_center():
         st.rerun()
     initialized = st.session_state.get("early_warning_initialized", [])
     if initialized:
-        st.info("تم إنشاء خط أساس لأول مرة للملفات: " + "، ".join(initialized) + ". أضف مواداً جديدة ثم أعد الفحص لرصد التغييرات.")
+        st.info("تم إنشاء خط أساس لأول مرة للملفات: " + "، ".join(initialized) + ". لن يصدر إنذار عن مواد قديمة قبل خط الأساس.")
     alerts = st.session_state.get("early_warning_last_alerts", [])
     if alerts:
         st.success(f"تم رصد تغييرات في {len(alerts)} ملف/ملفات.")
         for alert in alerts:
-            with st.expander(f"🚨 {alert.get('case_title')} · {len(alert.get('new_materials', []))} مادة جديدة", expanded=True):
+            sev = alert.get("severity", "متابعة")
+            with st.expander(f"🚨 {sev} · {alert.get('case_title')} · {len(alert.get('new_materials', []))} مادة جديدة", expanded=True):
+                if alert.get("urgent_terms"):
+                    st.warning("كلمات تستدعي مراجعة عاجلة للمصدر، ولا تثبت وقوع الحدث: " + "، ".join(alert["urgent_terms"]))
                 if alert.get("new_entities"):
-                    st.write("**كيانات ظهرت لأول مرة في الملف:** " + "، ".join(alert["new_entities"]))
+                    st.write("**كيانات ظهرت لأول مرة:** " + "، ".join(alert["new_entities"]))
                 for item in alert.get("new_materials", []):
-                    st.markdown(f"**{item.get('title')}**")
+                    st.markdown(f"**مادة جديدة: {item.get('title')}**")
                     st.caption(f"{item.get('type')} · {item.get('outlet')} · {item.get('date')} · الكاتب: {item.get('author')}")
-                    if item.get("url"):
-                        st.markdown(f"[فتح المصدر الأصلي]({item['url']})")
-                    if item.get("signals"):
-                        for group, terms in item["signals"].items():
-                            st.warning(f"إشارة لغوية محتملة ({group}): " + "، ".join(terms))
-                    elif not item.get("text_available"):
-                        st.caption("المادة محفوظة دون نص كامل؛ لا يمكن تحليل تحول اللغة من العنوان وحده.")
+                    if item.get("url"): st.markdown(f"[فتح المصدر الأصلي]({item['url']})")
+                    for group, terms in item.get("signals", {}).items(): st.warning(f"إشارة لغوية محتملة ({group}): " + "، ".join(terms))
+                    if not item.get("text_available"): st.caption("المادة بلا نص محفوظ؛ لا يمكن استنتاج موقف أو حدث من العنوان وحده.")
+                for item in alert.get("changed_materials", []):
+                    st.info(f"**تغيرت مادة محفوظة:** {item.get('title')} · الحقول: {', '.join(item.get('changed_fields', []))}")
+                    if item.get("url"): st.markdown(f"[فتح المصدر]({item['url']})")
+                for item in alert.get("changed_claims", []):
+                    before, after = item.get("before") or {}, item.get("after") or {}
+                    st.write(f"**تغير سجل ادعاء:** {before.get('statement') or after.get('statement')}")
+                    st.caption(f"حالة الدليل: {before.get('status', 'جديد')} ← {after.get('status', 'غير محدد')} · المصدر: {after.get('source', '')}")
+                for item in alert.get("changed_events", []):
+                    before, after = item.get("before") or {}, item.get("after") or {}
+                    st.write(f"**تغير حدث:** {before.get('title') or after.get('title')} · {before.get('date', '')} ← {after.get('date', '')}")
+                for item in alert.get("stance_changes", []):
+                    st.warning(f"**تغير موقف/زاوية مسجل يحتاج تحققاً:** {item.get('actor')} · {' / '.join(item.get('previous_positions', []))} ← {item.get('new_position')}")
+                    if item.get("url"): st.markdown(f"[المصدر الأصلي]({item['url']})")
                 st.caption(alert.get("note", ""))
         daily_md = early_warning_mod.build_daily_brief(alerts)
         st.download_button("⬇️ تنزيل موجز التغييرات", daily_md, file_name="marsad_early_warning.md", key="early_warning_download")
@@ -5345,12 +5514,12 @@ def render_early_warning_center():
             st.code(prompt, language=None)
             st.download_button("تنزيل البرومبت", prompt, file_name="early_warning_analysis_prompt.txt", key="early_warning_prompt_download")
     else:
-        st.info("لا توجد نتائج فحص جديدة في هذه الجلسة. نفّذ الفحص بعد إضافة مواد جديدة إلى ملفاتك.")
+        st.info("لا توجد تغييرات جديدة في آخر فحص. لو ده أول فحص، تم إنشاء خط الأساس فقط.")
     history = (S().get("early_warning") or {}).get("reports", [])
     if history:
         with st.expander(f"📚 سجل الإنذارات السابقة ({len(history)})"):
             for item in reversed(history[-30:]):
-                st.write(f"**{item.get('case_title')}** · {item.get('created_at')} · {len(item.get('new_materials', []))} مادة جديدة")
+                st.write(f"**{item.get('severity', 'متابعة')} · {item.get('case_title')}** · {item.get('created_at')} · {len(item.get('new_materials', []))} مادة جديدة · {len(item.get('changed_claims', []))} ادعاء متغير")
 
 
 def render_dossiers(P="pol"):
