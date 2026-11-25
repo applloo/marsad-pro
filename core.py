@@ -46,15 +46,35 @@ UA = {
 
 
 _TR_CACHE = {}
+# «قاطع الترجمة»: لما جوجل يبطّأ أو يرفض (بيحصل كتير من سيرفرات GitHub) كانت كل ترجمة فاشلة بتستنى دقايق،
+# ومع مئات العناوين البحث كان بياخد ساعات. دلوقتي: بعد TR_FAIL_LIMIT فشل ورا بعض بنريّح الترجمة TR_COOL ثانية
+# (العناوين بتفضل بلغتها ونكمل)، وبعدها نجرّب تاني. وTR_STATS بتتطبع في سجل GitHub عشان نعرف اللي حصل.
+TR_FAIL_LIMIT, TR_COOL = 4, 180
+_TR_STATE = {"fails": 0, "cool_until": 0.0}
+TR_STATS = {"ok": 0, "fail": 0, "skipped": 0, "secs": 0.0, "cools": 0}
+
+
+def tr_cooling():
+    return time.time() < _TR_STATE["cool_until"]
+
+
+def tr_stats_reset():
+    TR_STATS.update(ok=0, fail=0, skipped=0, secs=0.0, cools=0)
+
+
+def tr_stats_line():
+    s = TR_STATS
+    return (f"ترجمة: نجحت {s['ok']}، فشلت {s['fail']}، اتسابت بلغتها {s['skipped']} (جوجل كان مريّح {s['cools']} مرة)، "
+            f"وقت الترجمة {int(s['secs'])}ث")
 
 
 def _gtx(text, src, dest):
     url = "https://translate.googleapis.com/translate_a/single"
     prm = {"client": "gtx", "sl": src, "tl": dest, "dt": "t"}
     if len(text) > 500:  # النص الطويل (العبرية خصوصاً) يتجاوز حد طول الرابط في GET
-        r = requests.post(url, params=prm, data={"q": text}, headers=UA, timeout=30)
+        r = requests.post(url, params=prm, data={"q": text}, headers=UA, timeout=(6, 15))
     else:
-        r = requests.get(url, params={**prm, "q": text}, headers=UA, timeout=20)
+        r = requests.get(url, params={**prm, "q": text}, headers=UA, timeout=(6, 12))
     r.raise_for_status()
     return "".join(seg[0] for seg in r.json()[0] if seg and seg[0])
 
@@ -62,7 +82,7 @@ def _gtx(text, src, dest):
 def _gtx_alt(text, src, dest):
     """مسار ثانٍ لترجمة جوجل (واجهة إضافة المتصفح) عند تعذّر المسار الأول"""
     r = requests.get("https://clients5.google.com/translate_a/t",
-                     params={"client": "dict-chrome-ex", "sl": src, "tl": dest, "q": text}, headers=UA, timeout=20)
+                     params={"client": "dict-chrome-ex", "sl": src, "tl": dest, "q": text}, headers=UA, timeout=(6, 12))
     r.raise_for_status()
     j = r.json()
     if isinstance(j, dict):
@@ -72,7 +92,7 @@ def _gtx_alt(text, src, dest):
 
 def _gtx_mobile(text, src, dest):
     """مسار ثالث: صفحة جوجل للموبايل (HTML)"""
-    r = requests.get("https://translate.google.com/m", params={"sl": src, "tl": dest, "q": text}, headers=UA, timeout=20)
+    r = requests.get("https://translate.google.com/m", params={"sl": src, "tl": dest, "q": text}, headers=UA, timeout=(6, 12))
     r.raise_for_status()
     m = re.search(r'class="result-container">(.*?)</div>', r.text, re.S)
     if not m:
@@ -149,12 +169,37 @@ def tr(text, src="auto", dest="ar"):
         g = gloss_tr(text, dest)
         if g:
             return g
-    for attempt in range(3):
+    if tr_cooling():  # جوجل رافض دلوقتي: مانستناش، العنوان يفضل بلغته
+        TR_STATS["skipped"] += 1
+        return text
+    t0 = time.time()
+    try:
+        out = _tr_net(text, src, dest, key)
+    finally:
+        TR_STATS["secs"] += time.time() - t0
+    if out is None:
+        TR_STATS["fail"] += 1
+        _TR_STATE["fails"] += 1
+        if _TR_STATE["fails"] >= TR_FAIL_LIMIT:
+            _TR_STATE["fails"] = 0
+            _TR_STATE["cool_until"] = time.time() + TR_COOL
+            TR_STATS["cools"] += 1
+        return text
+    TR_STATS["ok"] += 1
+    _TR_STATE["fails"] = 0
+    return out
+
+
+def _tr_net(text, src, dest, key):
+    """محاولتين بس، والمسار السريع الأول (مهلة 12ث). deep-translator مالوش مهلة خاصة بيه فبقى في المحاولة التانية بس"""
+    for attempt in range(2):
+        if tr_cooling():
+            return None
         for fn in (
-            (lambda: GoogleTranslator(source=src, target=dest).translate(text)) if GoogleTranslator else None,
             lambda: _gtx(text, src, dest),
-            (lambda: _gtx_alt(text, src, dest)) if attempt >= 1 else None,
-            (lambda: _gtx_mobile(text, src, dest)) if attempt >= 2 else None,
+            (lambda: _gtx_alt(text, src, dest)) if attempt == 0 else None,
+            (lambda: GoogleTranslator(source=src, target=dest).translate(text)) if (GoogleTranslator and attempt == 1) else None,
+            (lambda: _gtx_mobile(text, src, dest)) if attempt == 1 else None,
         ):
             if fn is None:
                 continue
@@ -170,7 +215,7 @@ def tr(text, src="auto", dest="ar"):
             except Exception:
                 pass
         time.sleep(0.8)
-    return text
+    return None
 
 
 def chunk_text(text, limit=4000):
@@ -1026,7 +1071,7 @@ def translate_titles(items):
     ar = _batch_tr(titles, "ar")
     for _ in range(2):  # إعادة محاولة بطيئة لما بقي كما هو (غير عربي أصلاً)
         bad = [i for i, a in enumerate(items) if ar[i] == titles[i] and not _HAS_AR.search(titles[i]) and titles[i].strip()]
-        if not bad:
+        if not bad or tr_cooling():
             break
         time.sleep(1.5)
         for i in bad:

@@ -128,7 +128,7 @@ def src_label(domain, with_domain=True):
         return html.escape(str(domain or "")) + f" (تعذّر تحديد الدولة: {type(e).__name__})"
 
 
-APP_VERSION = "9.9"  # بيزيد مع كل نسخة جديدة
+APP_VERSION = "9.10"  # بيزيد مع كل نسخة جديدة
 st.set_page_config(page_title="Marsad | مركز الرصد والتحليل", page_icon="🔷", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown(

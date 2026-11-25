@@ -241,6 +241,7 @@ def main():
     for key in keys:
         t0 = time.time()
         print(f"▶ {key}: بدأ", flush=True)
+        core.tr_stats_reset()
 
         def one(key=key):
             if key in SCOPES:
@@ -255,10 +256,12 @@ def main():
         try:
             data = job_guard.run_limited(key, SCOPE_LIMIT, one, log=lambda m: print(m, flush=True))
             status["counts"][key] = len(data["items"])
+            print(f"{key}: {core.tr_stats_line()}", flush=True)
             print(f"{key}: {len(data['items'])} نتيجة في {int(time.time() - t0)}ث", flush=True)
         except Exception as e:
             status["errors"][key] = f"{type(e).__name__}: {e}"
             print(f"{key} فشل: {e}", flush=True)
+            print(f"{key}: {core.tr_stats_line()}", flush=True)
         status["done"].append(key)
         put_status()
     status["state"] = "done"
