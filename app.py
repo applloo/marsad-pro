@@ -120,6 +120,7 @@ def src_label(domain, with_domain=True):
         return html.escape(str(domain or "")) + f" (تعذّر تحديد الدولة: {type(e).__name__})"
 
 
+APP_VERSION = "9.0"  # بيزيد مع كل نسخة جديدة
 st.set_page_config(page_title="Marsad | مركز الرصد والتحليل", page_icon="🔷", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown(
@@ -182,42 +183,36 @@ h1,h2,h3,h4 {color:#fff!important;font-weight:850!important;letter-spacing:0!imp
 h1{font-size:clamp(1.8rem,3vw,2.55rem)!important;}
 h2{font-size:clamp(1.35rem,2vw,1.8rem)!important;}
 .marsad-brand img{filter:drop-shadow(0 10px 24px rgba(46,196,220,.18));max-width:100%;height:auto;}
-/* Main navigation: right-hand RTL rail; only the first-level tabs become the sidebar. */
-.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"]{
- display:flex!important; flex-direction:row!important; direction:rtl!important;
- align-items:flex-start!important; gap:20px!important; width:100%!important; min-width:0!important;
+/* Navigation: main and sub sections as big tap buttons (only the chosen section is drawn = lighter app). */
+.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [role="radiogroup"],
+.stApp div[data-testid="stElementContainer"]:has(#marsad-sub-nav-start) + div[data-testid="stElementContainer"] [role="radiogroup"]{
+ display:grid!important; grid-template-columns:repeat(auto-fill,minmax(170px,1fr))!important; gap:8px!important; width:100%!important; direction:rtl!important;
 }
-.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] [role="tablist"]{
- order:0!important; flex:0 0 252px!important; width:252px!important; min-width:220px!important;
- display:flex!important; flex-direction:column!important; align-items:stretch!important; gap:8px!important;
- padding:12px!important; margin:0!important; white-space:normal!important;
- border:1px solid rgba(116,144,205,.24)!important; border-radius:20px!important;
+.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [role="radiogroup"]{
+ padding:12px!important; border:1px solid rgba(116,144,205,.24)!important; border-radius:20px!important;
  background:linear-gradient(160deg,rgba(20,39,72,.96),rgba(10,24,47,.96))!important;
  box-shadow:0 16px 40px rgba(0,0,0,.22),inset 0 1px rgba(255,255,255,.06)!important;
- position:sticky!important; top:1rem!important; max-height:calc(100vh - 3rem)!important; overflow-y:auto!important;
 }
-.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] [role="tabpanel"]{
- order:1!important; flex:1 1 0!important; width:0!important; min-width:0!important;
- padding:2px 0!important; direction:rtl!important; text-align:right!important;
+.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [role="radiogroup"] label,
+.stApp div[data-testid="stElementContainer"]:has(#marsad-sub-nav-start) + div[data-testid="stElementContainer"] [role="radiogroup"] label{
+ margin:0!important; min-height:50px!important; padding:10px 14px!important; border-radius:13px!important; cursor:pointer!important;
+ border:1px solid rgba(116,144,205,.30)!important; background:rgba(255,255,255,.03)!important;
+ display:flex!important; align-items:center!important; justify-content:center!important; text-align:center!important;
+ font-size:1rem!important; font-weight:750!important; color:#e7efff!important; transition:background .2s ease,border-color .2s ease!important;
 }
-.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] button[role="tab"]{
- width:100%!important; min-width:0!important; justify-content:flex-start!important;
- text-align:right!important; direction:rtl!important; white-space:normal!important;
- min-height:50px!important; padding:12px 14px!important; margin:0!important;
- border:1px solid transparent!important; border-radius:13px!important;
- background:transparent!important; color:#e7efff!important; font-size:.98rem!important; font-weight:750!important;
- transition:background .2s ease,border-color .2s ease,transform .2s ease!important;
+.stApp div[data-testid="stElementContainer"]:has(#marsad-sub-nav-start) + div[data-testid="stElementContainer"] [role="radiogroup"] label{min-height:44px!important;font-size:.95rem!important;}
+.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [role="radiogroup"] label > div:first-child,
+.stApp div[data-testid="stElementContainer"]:has(#marsad-sub-nav-start) + div[data-testid="stElementContainer"] [role="radiogroup"] label > div:first-child{display:none!important;}
+.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [role="radiogroup"] label:hover,
+.stApp div[data-testid="stElementContainer"]:has(#marsad-sub-nav-start) + div[data-testid="stElementContainer"] [role="radiogroup"] label:hover{
+ background:rgba(70,120,190,.22)!important; border-color:rgba(83,211,233,.45)!important;
 }
-.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] button[role="tab"]:hover{
- background:rgba(70,120,190,.22)!important; border-color:rgba(83,211,233,.35)!important; transform:translateX(-2px)!important;
+.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [role="radiogroup"] label:has(input:checked),
+.stApp div[data-testid="stElementContainer"]:has(#marsad-sub-nav-start) + div[data-testid="stElementContainer"] [role="radiogroup"] label:has(input:checked){
+ background:linear-gradient(115deg,rgba(45,199,220,.28),rgba(124,93,230,.34))!important;
+ border:1px solid rgba(73,215,234,.85)!important; color:#fff!important; box-shadow:0 8px 22px rgba(21,154,190,.18)!important;
 }
-.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] button[role="tab"][aria-selected="true"]{
- background:linear-gradient(115deg,rgba(45,199,220,.25),rgba(124,93,230,.30))!important;
- border:1px solid rgba(73,215,234,.75)!important; color:#fff!important;
- box-shadow:0 8px 22px rgba(21,154,190,.16),inset -3px 0 #35d7ee!important;
-}
-.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] [data-baseweb="tab-highlight"],
-.stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] [data-baseweb="tab-border"]{display:none!important;}
+.marsad-nav-gap{height:6px;}
 /* Cards, metrics and expanders */
 [data-testid="stVerticalBlockBorderWrapper"], [data-testid="stMetric"], [data-testid="stExpander"]{border:1px solid rgba(120,150,205,.28)!important;border-radius:18px!important;background:linear-gradient(145deg,rgba(23,43,77,.86),rgba(12,27,52,.94))!important;box-shadow:0 12px 28px rgba(0,0,0,.16),inset 0 1px rgba(255,255,255,.045)!important;}
 [data-testid="stMetric"]{padding:15px!important;}
@@ -239,10 +234,9 @@ a{color:#74ddf1!important;}
 .hm-stat{background:linear-gradient(145deg,#192f54,#101f3a)!important;border:1px solid #3b5684!important;box-shadow:0 8px 22px rgba(0,0,0,.18)!important;}
 .hm-stat b{color:#fff!important;}
 @media(max-width:850px){
- .stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"]{display:flex!important;flex-direction:column!important;gap:10px!important;}
- .stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] [role="tablist"]{position:relative!important;top:auto!important;max-height:none!important;width:100%!important;flex:0 0 auto!important;display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;}
- .stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] [role="tabpanel"]{width:100%!important;flex:1 1 auto!important;}
- .stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [data-testid="stTabs"] button[role="tab"]{font-size:.88rem!important;padding:10px!important;min-height:44px!important;}
+ .stApp [role="radiogroup"] label{font-size:.9rem!important;}
+ .stApp div[data-testid="stElementContainer"]:has(#marsad-main-nav-start) + div[data-testid="stElementContainer"] [role="radiogroup"],
+ .stApp div[data-testid="stElementContainer"]:has(#marsad-sub-nav-start) + div[data-testid="stElementContainer"] [role="radiogroup"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
  [data-testid="stMainBlockContainer"]{padding-left:.65rem!important;padding-right:.65rem!important;}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}}
@@ -295,6 +289,15 @@ def fix_untranslated(items, limit=40):
     return sum(1 for x in bad if core._HAS_AR.search(x.get("title_ar") or ""))
 
 
+def tts_get(name, default):
+    """إعدادات الصوت بتتحفظ في نسخة احتياطية، عشان ماتضيعش لما تقفل قسم الإعدادات (ستريمليت بيمسح قيم الأزرار اللي مش ظاهرة)"""
+    ss = st.session_state
+    if name in ss:
+        ss.setdefault("_tts_saved", {})[name] = ss[name]
+        return ss[name]
+    return ss.get("_tts_saved", {}).get(name, default)
+
+
 def tts_settings(prefix):
     c1, c2 = st.columns(2)
     label = c1.selectbox("الصوت", list(core.VOICES), key=f"{prefix}_voice")
@@ -340,10 +343,10 @@ def listen_widget(a, wk):
     url = a.get("url", "")
     if st.button("🎧 استمع", key=f"ls_{wk}"):
         ss = st.session_state
-        voice = core.VOICES[ss.get("tts_voice", list(core.VOICES)[0])]
+        voice = core.VOICES[tts_get("tts_voice", list(core.VOICES)[0])]
         with st.spinner("جارٍ تجهيز الصوت (جلب النص وترجمته ثم النطق)… قد يستغرق دقيقة للمقالات الطويلة."):
-            text, note0 = speech_text(url, a.get("title_ar", ""), ss.get("tts_mode", TTS_MODES[0]))
-            res = make_audio(text, voice, ss.get("tts_rate", 0))
+            text, note0 = speech_text(url, a.get("title_ar", ""), tts_get("tts_mode", TTS_MODES[0]))
+            res = make_audio(text, voice, tts_get("tts_rate", 0))
             if res:
                 if len(aud) >= 6:
                     aud.pop(next(iter(aud)))
@@ -709,7 +712,7 @@ def show_logo(width=300):
 
 def show_footer():
     st.divider()
-    st.markdown("<div style='text-align:center;color:#94a3b8;font-size:.85rem'>© Ehab Ibrahim — رادار الأخبار العالمية · جميع الحقوق محفوظة</div>",
+    st.markdown(f"<div style='text-align:center;color:#94a3b8;font-size:.85rem'>© Ehab Ibrahim — رادار الأخبار العالمية · جميع الحقوق محفوظة · النسخة {APP_VERSION}</div>",
                 unsafe_allow_html=True)
 
 
@@ -1235,6 +1238,85 @@ if PERSIST and "_res_loaded" not in st.session_state:
         pass
 
 
+AUTO_INTEL_FILE = "marsad_auto_intel.json"
+
+
+def auto_intel(force=False):
+    """نتايج «تحديث الأقسام الذكية» اللي بتشتغل لوحدها على GitHub (بنقراها مرة كل دقيقتين بالكتير)"""
+    ss = st.session_state
+    if not PERSIST:
+        return {}
+    if force or time.time() - ss.get("_auto_intel_at", 0) > 120:
+        try:
+            ss["_auto_intel"] = store.load_file(GH_TOKEN, GH_GIST, AUTO_INTEL_FILE, {}) or {}
+        except Exception:
+            ss.setdefault("_auto_intel", {})
+        ss["_auto_intel_at"] = time.time()
+    return ss.get("_auto_intel") or {}
+
+
+def seed_from_auto():
+    """لو مفيش نتيجة يدوي في التاب، اعرض آخر نتيجة تلقائية بدل الصفحة الفاضية"""
+    ai = auto_intel()
+    ss = st.session_state
+    if not ai or ss.get("_auto_seeded") == ai.get("finished"):
+        return
+    ss["_auto_seeded"] = ai.get("finished")
+    if ai.get("paid") and (not ss.get("paid_radar_results") or ss["paid_radar_results"].get("auto")):
+        ss["paid_radar_results"] = {**ai["paid"], "auto": True}
+    if ai.get("health") and (not ss.get("source_health_latest") or ss["source_health_latest"].get("auto")):
+        ss["source_health_latest"] = {**ai["health"], "auto": True}
+    if ai.get("dossier") and (not ss.get("intel_cluster_latest") or ss["intel_cluster_latest"].get("auto")):
+        ss["intel_cluster_latest"] = ai["dossier"]
+        ss["intel_cluster_notes"] = [f"📥 دي حصيلة تلقائية من البحث الشامل ({len(ai['dossier'].get('articles', []))} عنوان)."]
+    w = ai.get("warning") or {}
+    if w.get("alerts") and not ss.get("early_warning_last_alerts"):
+        ss["early_warning_last_alerts"] = w["alerts"]
+
+
+def auto_note(kind):
+    """سطر صغير فوق التاب يقول آخر تحديث تلقائي كان إمتى"""
+    ai = auto_intel()
+    at = {"paid": (ai.get("paid") or {}).get("at"), "health": (ai.get("health") or {}).get("checked_at"),
+          "dossier": (ai.get("dossier") or {}).get("created_at"), "warning": (ai.get("warning") or {}).get("at")}.get(kind)
+    t = keys_mod.parse(at) if at else None
+    if t:
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        st.caption(f"🤖 آخر تحديث تلقائي (GitHub): {t.astimezone(core.TZ).strftime('%Y-%m-%d %H:%M')} بتوقيت القاهرة. "
+                   "بيتحدّث لوحده كل يوم بعد البحث الشامل، والأزرار تحت لو عايز تعمل فحص بنفسك دلوقتي.")
+    else:
+        st.caption("🤖 القسم ده بيتحدّث لوحده كل يوم بعد البحث الشامل (من «غرفة العمليات» ← تحديث الأقسام الذكية). لسه ماتعملش تحديث تلقائي.")
+
+
+def render_auto_intel_panel():
+    """زرار تشغيل «تحديث الأقسام الذكية» على GitHub وحالته"""
+    with st.expander("🤖 تحديث الأقسام الذكية تلقائياً (الرادار المدفوع، التجميع، الكيانات، الإنذار المبكر، صحة المصادر)", expanded=False):
+        st.caption("بيشتغل لوحده كل يوم بعد ما البحث الشامل يخلص، من غير ذكاء اصطناعي ومن غير تكلفة. وتقدر تشغّله دلوقتي من هنا.")
+        ai = auto_intel()
+        if ai.get("finished") or ai.get("started"):
+            t = keys_mod.parse(ai.get("finished") or ai.get("started"))
+            if t and t.tzinfo is None:
+                t = t.replace(tzinfo=timezone.utc)
+            st.markdown(f"آخر تشغيل: **{'✅ خلص' if ai.get('state') == 'done' else '⏳ شغال'}** · "
+                        f"{t.astimezone(core.TZ).strftime('%Y-%m-%d %H:%M') if t else ''} · أخبار اتحللت: {ai.get('pool_size', 0)}")
+            for name, stt in (ai.get("steps") or {}).items():
+                st.caption(("✅ " if stt.get("ok") else "❌ ") + name + (" (اتأجل، بيتعمل كل 3 أيام)" if stt.get("skipped") else "")
+                           + (f" — {stt.get('error')}" if stt.get("error") else ""))
+        tok = _sec("ACTIONS_TOKEN")
+        b1, b2 = st.columns(2)
+        if b1.button("▶️ شغّل التحديث دلوقتي", type="primary", use_container_width=True, key="auto_intel_run", disabled=not tok):
+            ok, msg = gh_actions.dispatch(tok, _sec("GH_REPO") or gh_actions.DEFAULT_REPO, _sec("GH_BRANCH") or "main", "monitor.yml")
+            (st.success if ok else st.error)(msg)
+        if b2.button("🔄 حمّل آخر نتيجة", use_container_width=True, key="auto_intel_reload"):
+            auto_intel(force=True)
+            st.session_state.pop("_auto_seeded", None)
+            seed_from_auto()
+            st.success("✅ اتحمّلت. افتح أي قسم من الأقسام الذكية تلاقي النتيجة.")
+        if not tok:
+            st.caption("محتاج ACTIONS_TOKEN في Secrets عشان زرار التشغيل.")
+
+
 def _pack_res(v):
     out = {**v, "items": (v.get("items") or [])[:200], "saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     return json.loads(json.dumps(out, ensure_ascii=False, default=str))
@@ -1305,21 +1387,55 @@ _now0 = datetime.now(timezone.utc)
 query, match, joiner, ctype = "", core.MATCH_MODES[0], "AND", "الكل"
 start_utc, end_utc, max_rec, verify, hide_nomatch = _now0 - timedelta(days=7), _now0, 30, True, False
 
-# علامة تنسيق لتحديد شريط التنقل الرئيسي فقط، دون التأثير على التابات الفرعية داخل الأقسام.
+# التنقّل: اختيار القسم بيرسم القسم ده بس (قبل كده كل الأقسام والتابات كانت بتترسم مع كل دوسة، فالتطبيق كان تقيل).
+MAIN_SECTIONS = {"home": "🏠 الرئيسية", "search": "🔎 البحث والرصد", "intel": "🛰️ التحليل والاستخبارات",
+                 "ops": "⏱️ غرفة العمليات", "library": "🗂️ الملفات والأرشيف", "settings": "⚙️ المصادر والإعدادات",
+                 "guide": "📘 دليل الاستخدام"}
+SUB_SECTIONS = {
+    "search": {"geo": "🌍 بحث حسب المنطقة", "eg": "🇪🇬 الشأن المصري", "ml": "🔤 ترجمة ثم بحث", "br": "🗞️ تصفح المصادر",
+               "paid": "🧾 رادار التقارير المدفوعة", "gd": "🌐 بحث GDELT"},
+    "intel": {"wr": "✍️ كتّاب ومحللون", "in": "🛰️ مكتب الاستخبارات", "health": "🩺 صحة المصادر",
+              "clusters": "🧩 تجميع الأحداث والروايات", "entities": "🧭 الكيانات والتناقضات"},
+    "library": {"dos": "🧵 الملفات والخيوط", "sv": "📌 المحفوظات", "lab": "🧠 ورشة التحليل"},
+}
+
+
+def _nav_pick(label, options, key, qp):
+    """اختيار بيتفتكر في رابط الصفحة، فلو عملت تحديث للصفحة بترجع لنفس المكان"""
+    opts = list(options)
+    if key not in st.session_state:
+        try:
+            v = st.query_params.get(qp)
+        except Exception:
+            v = None
+        st.session_state[key] = v if v in opts else opts[0]
+    val = st.radio(label, opts, format_func=options.get, horizontal=True, key=key, label_visibility="collapsed")
+    try:
+        if st.query_params.get(qp) != val:
+            st.query_params[qp] = val
+    except Exception:
+        pass
+    return val
+
+
 st.markdown("<div id='marsad-main-nav-start'></div>", unsafe_allow_html=True)
-# تنقّل رئيسي مختصر: الوظائف مجمّعة حسب المهمة بدل 14 تبويباً متزاحماً.
-tab_home, tab_search, tab_intel, tab_ops, tab_library, tab_settings, tab_guide = st.tabs([
-    "🏠 الرئيسية", "🔎 البحث والرصد", "🛰️ التحليل والاستخبارات",
-    "⏱️ غرفة العمليات", "🗂️ الملفات والأرشيف", "⚙️ المصادر والإعدادات", "📘 دليل الاستخدام"
-])
-with tab_search:
-    tab_geo, tab_eg, tab_ml, tab_br, tab_paid, tab_gd = st.tabs([
-        "🌍 بحث حسب المنطقة", "🇪🇬 الشأن المصري", "🔤 ترجمة ثم بحث", "🗞️ تصفح المصادر", "🧾 رادار التقارير المدفوعة", "🌐 بحث GDELT"
-    ])
-with tab_intel:
-    tab_wr, tab_in, tab_health, tab_clusters, tab_entities = st.tabs(["✍️ كتّاب ومحللون", "🛰️ مكتب الاستخبارات", "🩺 صحة المصادر", "🧩 تجميع الأحداث والروايات", "🧭 الكيانات والتناقضات"])
-with tab_library:
-    tab_dos, tab_sv, tab_lab = st.tabs(["🧵 الملفات والخيوط", "📌 المحفوظات", "🧠 ورشة التحليل"])
+NAV_MAIN = _nav_pick("القسم", MAIN_SECTIONS, "nav_main", "sec")
+NAV_SUB = ""
+if NAV_MAIN in SUB_SECTIONS:
+    st.markdown("<div id='marsad-sub-nav-start'></div>", unsafe_allow_html=True)
+    NAV_SUB = _nav_pick("القسم الفرعي", SUB_SECTIONS[NAV_MAIN], f"nav_sub_{NAV_MAIN}", "sub")
+st.markdown("<div class='marsad-nav-gap'></div>", unsafe_allow_html=True)
+
+
+def _on(main, sub=""):
+    return NAV_MAIN == main and (not sub or NAV_SUB == sub)
+
+
+_page = st.container()
+tab_home = tab_search = tab_intel = tab_ops = tab_library = tab_settings = tab_guide = _page
+tab_geo = tab_eg = tab_ml = tab_br = tab_paid = tab_gd = _page
+tab_wr = tab_in = tab_health = tab_clusters = tab_entities = _page
+tab_dos = tab_sv = tab_lab = _page
 tab_dr = tab_ops
 tab_ms = tab_settings
 home_box = tab_home
@@ -1610,7 +1726,7 @@ def render_results(key):
         url = a.get("url", "")
         with st.container(border=True):
             st.markdown(card_html(a), unsafe_allow_html=True)
-            _article_key = hashlib.sha256(str(url or f"{key}_{i}").encode("utf-8")).hexdigest()[:12]
+            _article_key = key + "_" + hashlib.sha256(str(url or f"{key}_{i}").encode("utf-8")).hexdigest()[:12] + f"_{i}"  # فيه اسم التاب ورقم الكارت عشان مايتكررش
             st.checkbox("☑️ ضمّ المقال إلى البرومبت التحليلي الجماعي", key=f"script_pick_{_article_key}")
             _act1, _act2 = st.columns(2)
             if _act1.button("🎬 توليد برومبت سكريبت لهذا المقال", key=f"script_one_{_article_key}", use_container_width=True):
@@ -1646,7 +1762,7 @@ def render_results(key):
     _selected_articles = []
     for _idx, _article in enumerate(view_items[:n_show]):
         _u = _article.get("url", "")
-        _ak = hashlib.sha256(str(_u or f"{key}_{_idx}").encode("utf-8")).hexdigest()[:12]
+        _ak = key + "_" + hashlib.sha256(str(_u or f"{key}_{_idx}").encode("utf-8")).hexdigest()[:12] + f"_{_idx}"
         if st.session_state.get(f"script_pick_{_ak}"):
             _selected_articles.append(_article)
     if _selected_articles:
@@ -2061,26 +2177,28 @@ def render_home():
             unsafe_allow_html=True)
 
 
-with home_box:
-    render_home()
-with tab_geo:
-    geo_options = {
-        "🇮🇱 إسرائيل": ("il", ISRAEL, "IS", "IL", "ابحث في المصادر الإسرائيلية",
-                         "يُترجم بحثك إلى العبرية للمصادر العبرية، وإلى الإنجليزية للنسخ الإنجليزية."),
-        "🇺🇸 الولايات المتحدة": ("us", USA, "US", "US", "ابحث في المصادر الأمريكية",
-                                  "مصادر أمريكية ومراكز أبحاث وصحافة دولية ناطقة بالإنجليزية."),
-        "🇬🇧 بريطانيا": ("uk", UK, "UK", "UK", "ابحث في المصادر البريطانية",
-                          "صحف وقنوات بريطانية ومصادر متخصصة بالشرق الأوسط."),
-        "🌍 تركيا وإيران وإثيوبيا": ("rg", REGION, None, "US", "ابحث في مصادر تركيا وإيران وإثيوبيا",
-                                     "مصادر محلية بلغاتها: التركية والفارسية والأمهرية والإنجليزية.")
-    }
-    geo_choice = st.radio("نطاق الرصد", list(geo_options), horizontal=True, key="geo_scope")
-    geo_key, geo_groups, geo_gd, geo_gn, geo_label, geo_help = geo_options[geo_choice]
-    use_filters(geo_key, "full")
-    st.caption(geo_help)
-    if geo_key == "rg":
-        st.caption("اختر مصدراً واحداً أو عدة مصادر أو كلها، أو ابحث داخل مصدر واحد.")
-    curated_tab(geo_key, geo_groups, geo_gd, geo_gn, geo_label)
+if _on("home"):
+    with home_box:
+        render_home()
+if _on("search", "geo"):
+    with tab_geo:
+        geo_options = {
+            "🇮🇱 إسرائيل": ("il", ISRAEL, "IS", "IL", "ابحث في المصادر الإسرائيلية",
+                             "يُترجم بحثك إلى العبرية للمصادر العبرية، وإلى الإنجليزية للنسخ الإنجليزية."),
+            "🇺🇸 الولايات المتحدة": ("us", USA, "US", "US", "ابحث في المصادر الأمريكية",
+                                      "مصادر أمريكية ومراكز أبحاث وصحافة دولية ناطقة بالإنجليزية."),
+            "🇬🇧 بريطانيا": ("uk", UK, "UK", "UK", "ابحث في المصادر البريطانية",
+                              "صحف وقنوات بريطانية ومصادر متخصصة بالشرق الأوسط."),
+            "🌍 تركيا وإيران وإثيوبيا": ("rg", REGION, None, "US", "ابحث في مصادر تركيا وإيران وإثيوبيا",
+                                         "مصادر محلية بلغاتها: التركية والفارسية والأمهرية والإنجليزية.")
+        }
+        geo_choice = st.radio("نطاق الرصد", list(geo_options), horizontal=True, key="geo_scope")
+        geo_key, geo_groups, geo_gd, geo_gn, geo_label, geo_help = geo_options[geo_choice]
+        use_filters(geo_key, "full")
+        st.caption(geo_help)
+        if geo_key == "rg":
+            st.caption("اختر مصدراً واحداً أو عدة مصادر أو كلها، أو ابحث داخل مصدر واحد.")
+        curated_tab(geo_key, geo_groups, geo_gd, geo_gn, geo_label)
 
 DAY_OPTS = {"آخر 24 ساعة": 1, "آخر 3 أيام": 3, "آخر 7 أيام": 7, "آخر 14 يوماً": 14, "آخر 30 يوماً": 30}
 
@@ -2111,321 +2229,335 @@ def urlparse_path(url):
     return host + path
 
 
-with tab_br:
-    use_filters("br", "kw")
-    st.caption("افتح مصدراً وتصفّح أقسامه (الرأي، الأخبار…) بعناوين مترجمة للعربية؛ اضغط «ترجم المقال» على أي عنوان لقراءته مترجماً، أو احفظه. "
-               "بعض المواقع المدفوعة تحجب الفتح المباشر فيُستعان بأخبار Google بدلاً منه.")
-    pool_all = {}
-    for grp_key, groups in (("il", ISRAEL), ("us", USA), ("uk", UK), ("rg", REGION)):
-        for e in all_entries(grp_key, groups):
-            pool_all[e[0]] = e
-    bmode = st.radio("طريقة العرض", ["📂 أقسام موقع واحد", "📅 عناوين عدة مصادر خلال فترة"], horizontal=True, key="br_mode")
-    if bmode.startswith("📅"):
-        scope_all = st.radio("المصادر", ["كل المصادر", "أختار مصادر بعينها"], horizontal=True, key="br_scope")
-        chosen_src = list(pool_all.keys())
-        if scope_all.startswith("أختار"):
-            chosen_src = st.multiselect("اختر المصادر", list(pool_all.keys()), default=["تايمز أوف إسرائيل", "جيروزاليم بوست", "Axios", "Al-Monitor", "The Guardian"], key="br_multi")
-        bdays = st.selectbox("الفترة", list(DAY_OPTS.keys()), index=1, key="br_days")
-        use_kw = st.checkbox("اقتصر على كلمة البحث فوق في التاب (اتركه فارغاً لعرض كل العناوين)", value=False, key="br_kw")
-        if st.button("اعرض العناوين", type="primary", use_container_width=True, key="go_br2"):
-            kw = [t.strip() for t in TERM_SPLIT.split(query) if t.strip()] if use_kw else None
-            sel_b = [pool_all[n] for n in chosen_src]
-            if not sel_b:
-                st.warning("اختر مصدراً واحداً على الأقل.")
-            else:
-                with st.spinner(f"جارٍ جلب عناوين {len(sel_b)} مصدراً…"):
-                    items, notes = core.gnews_site_search(sel_b, DAY_OPTS[bdays], terms=kw, joiner=joiner, country="US", max_items=150)
-                    if ctype != "الكل":
-                        items = [a for a in items if a.get("ctype") == ctype]
-                    core.translate_titles(items)
-                dd = {"items": items, "errors": [] if items else ["لم تُرجع أخبار Google عناوين لهذه المصادر في الفترة."],
-                      "used": notes, "summaries": {}, "counts": {}, "silent": [], "hidden": 0, "hl": []}
-                st.session_state["res_br"] = dd
-                update_meta(dd, sel_b)
-        render_results("br")
-    else:
-        br_pick = st.selectbox("المصدر", list(pool_all.keys()), key="br_src")
-        lbl, dom_s, lang_s = pool_all[br_pick]
-        dlist = [d for d in dom_s.split("|") if d]
-        secs = []
-        for d in dlist:
-            secs += [(n, u, k) for n, u, k in SECTIONS.get(d, [])]
-        secs.append(("الصفحة الرئيسية", f"https://{dlist[0]}/", None))
-        secs.append(("🔗 رابط قسم آخر (أدخله بنفسك)", "", None))
-        sec_names = [x[0] for x in secs]
-        sec_pick = st.radio("القسم", sec_names, horizontal=True, key="br_sec")
-        sname_, surl_, skind_ = secs[sec_names.index(sec_pick)]
-        if not surl_:
-            surl_ = st.text_input("رابط صفحة القسم (من موقع هذا المصدر)", key="br_url", placeholder=f"https://{dlist[0]}/opinion").strip()
-        if st.button("افتح القسم وترجمه", type="primary", use_container_width=True, key="go_br"):
-            if not surl_.startswith("http"):
-                st.warning("أدخل رابطاً صحيحاً.")
-            else:
-                browse_run(lbl, dlist, "he" if lang_s == "he" else "en", sname_, surl_, skind_)
-        render_results("br")
-
-
-with tab_paid:
-    st.markdown("### 🧾 رادار المقالات والتقارير المدفوعة")
-    st.caption("يرصد العناوين والبيانات المنشورة علناً في المصادر ذات المحتوى المدفوع أو المحدود الوصول، ثم يبحث عن تغطية مفتوحة لنفس الخبر أو الموضوع. لا يحاول تجاوز الاشتراك ولا يعرض نصاً محمياً.")
-    st.markdown("[فهرس تقارير Tactical Report](https://www.tacticalreport.com/reports) · [النشرات والتنبيهات](https://www.tacticalreport.com/newsletters) · [المنتجات وطرق الاشتراك](https://www.tacticalreport.com/products)")
-    paid_names = [x[0] for x in paid_radar_mod.PAID_SOURCES]
-    paid_defaults = ["Tactical Report", "The New York Times", "The Washington Post", "The Wall Street Journal",
-                    "Bloomberg", "Foreign Affairs", "Haaretz", "Yedioth Ahronoth / Ynet", "Globes", "Calcalist",
-                    "The Jerusalem Post", "The Times of Israel", "Financial Times", "The Economist", "The Times",
-                    "The Telegraph", "Jane's", "Africa Confidential"]
-    chosen_paid = st.multiselect("المصادر التي تريد مراقبة عناوينها", paid_names,
-                                 default=[x for x in paid_defaults if x in paid_names], key="paid_sources_pick")
-    pcol1, pcol2 = st.columns([1, 2])
-    with pcol1:
-        paid_days_label = st.selectbox("الفترة الزمنية", ["آخر 24 ساعة", "آخر 3 أيام", "آخر 7 أيام", "آخر 14 يوماً", "آخر 30 يوماً"],
-                                       index=2, key="paid_days")
-    with pcol2:
-        paid_query = st.text_input("كلمات أو ملف بحث (اختياري)", placeholder="إيران، البحر الأحمر، مصر، صفقات السلاح...", key="paid_query")
-    paid_days = {"آخر 24 ساعة": 1, "آخر 3 أيام": 3, "آخر 7 أيام": 7, "آخر 14 يوماً": 14, "آخر 30 يوماً": 30}[paid_days_label]
-    with st.expander("🔎 عندك عنوان تقرير مدفوع بالفعل؟ ابحث عنه مباشرة"):
-        manual_title = st.text_input("الصق عنوان التقرير أو المقال", key="paid_manual_title", placeholder="Paste the exact English or Hebrew headline...")
-        if st.button("ابحث عن إعادة نشر وتغطيات مفتوحة", key="paid_manual_find", disabled=len(manual_title.strip()) < 8):
-            with st.spinner("جارٍ البحث عن العنوان والتغطيات المرتبطة في المصادر المفتوحة…"):
-                manual_alts, manual_note = paid_radar_mod.find_open_coverage(manual_title.strip(), "", paid_days, 10)
-            st.session_state["paid_manual_alternatives"] = {"items": manual_alts, "note": manual_note, "title": manual_title.strip()}
-        manual_data = st.session_state.get("paid_manual_alternatives")
-        if manual_data:
-            st.info(manual_data.get("note", ""))
-            st.markdown(f"**العنوان:** {core.tr(manual_data.get('title', ''), 'auto', 'ar')}")
-            for k, alt in enumerate(manual_data.get("items", [])):
-                st.markdown(f"**{k+1}. {alt.get('title_ar') or alt.get('title')}**")
-                st.caption(f"{alt.get('source_name')} · {alt.get('domain')} · {alt.get('match_label')}")
-                st.markdown(f"[فتح التغطية]({alt.get('url')})")
-    if st.button("🔎 اجمع العناوين المدفوعة وابحث عن الجديد", type="primary", use_container_width=True, key="paid_scan"):
-        if not chosen_paid:
-            st.warning("اختار مصدراً واحداً على الأقل.")
+if _on("search", "br"):
+    with tab_br:
+        use_filters("br", "kw")
+        st.caption("افتح مصدراً وتصفّح أقسامه (الرأي، الأخبار…) بعناوين مترجمة للعربية؛ اضغط «ترجم المقال» على أي عنوان لقراءته مترجماً، أو احفظه. "
+                   "بعض المواقع المدفوعة تحجب الفتح المباشر فيُستعان بأخبار Google بدلاً منه.")
+        pool_all = {}
+        for grp_key, groups in (("il", ISRAEL), ("us", USA), ("uk", UK), ("rg", REGION)):
+            for e in all_entries(grp_key, groups):
+                pool_all[e[0]] = e
+        bmode = st.radio("طريقة العرض", ["📂 أقسام موقع واحد", "📅 عناوين عدة مصادر خلال فترة"], horizontal=True, key="br_mode")
+        if bmode.startswith("📅"):
+            scope_all = st.radio("المصادر", ["كل المصادر", "أختار مصادر بعينها"], horizontal=True, key="br_scope")
+            chosen_src = list(pool_all.keys())
+            if scope_all.startswith("أختار"):
+                chosen_src = st.multiselect("اختر المصادر", list(pool_all.keys()), default=["تايمز أوف إسرائيل", "جيروزاليم بوست", "Axios", "Al-Monitor", "The Guardian"], key="br_multi")
+            bdays = st.selectbox("الفترة", list(DAY_OPTS.keys()), index=1, key="br_days")
+            use_kw = st.checkbox("اقتصر على كلمة البحث فوق في التاب (اتركه فارغاً لعرض كل العناوين)", value=False, key="br_kw")
+            if st.button("اعرض العناوين", type="primary", use_container_width=True, key="go_br2"):
+                kw = [t.strip() for t in TERM_SPLIT.split(query) if t.strip()] if use_kw else None
+                sel_b = [pool_all[n] for n in chosen_src]
+                if not sel_b:
+                    st.warning("اختر مصدراً واحداً على الأقل.")
+                else:
+                    with st.spinner(f"جارٍ جلب عناوين {len(sel_b)} مصدراً…"):
+                        items, notes = core.gnews_site_search(sel_b, DAY_OPTS[bdays], terms=kw, joiner=joiner, country="US", max_items=150)
+                        if ctype != "الكل":
+                            items = [a for a in items if a.get("ctype") == ctype]
+                        core.translate_titles(items)
+                    dd = {"items": items, "errors": [] if items else ["لم تُرجع أخبار Google عناوين لهذه المصادر في الفترة."],
+                          "used": notes, "summaries": {}, "counts": {}, "silent": [], "hidden": 0, "hl": []}
+                    st.session_state["res_br"] = dd
+                    update_meta(dd, sel_b)
+            render_results("br")
         else:
-            terms_paid = [x.strip() for x in TERM_SPLIT.split(paid_query) if x.strip()] if paid_query.strip() else None
-            with st.spinner("جارٍ رصد العناوين المنشورة علناً وترجمتها للعربية…"):
-                paid_items, paid_notes = paid_radar_mod.search_paid_headlines(chosen_paid, paid_days, terms_paid, max_items=120)
-                core.translate_titles(paid_items)
-            st.session_state["paid_radar_results"] = {"items": paid_items, "notes": paid_notes, "days": paid_days}
-            st.session_state["paid_radar_alternatives"] = {}
-            st.session_state["paid_radar_read"] = {}
-    paid_data = st.session_state.get("paid_radar_results")
-    if paid_data:
-        for note in paid_data.get("notes", []):
-            st.caption(note)
-        paid_items = paid_data.get("items", [])
-        st.markdown(f"**{len(paid_items)} عنواناً مرصوداً** خلال آخر {paid_data.get('days', paid_days)} يوم")
-        if not paid_items:
-            st.info("لم تظهر عناوين من المصادر المحددة في الفترة. جرّب توسيع الفترة أو إزالة الكلمات المفتاحية.")
-        for ix, item in enumerate(paid_items):
-            original = item.get("original_paid_url") or item.get("url", "")
-            host = item.get("domain", "")
-            title_ar = item.get("title_ar") or item.get("title", "")
-            title_en = item.get("title", "")
-            key = hashlib.sha256((original or title_en).encode("utf-8")).hexdigest()[:14]
-            with st.expander(f"{ix+1}. {title_ar[:150]}", expanded=False):
-                st.markdown(f"**العنوان بالعربية:** {title_ar}")
-                st.markdown(f"**العنوان الأصلي:** {title_en}")
-                st.markdown(f"**المصدر:** {item.get('paid_source', source_name(host))} · {item.get('paid_country', '')} · `{host}`")
-                st.markdown(f"**التاريخ:** {fmt_seen(item.get('seendate', ''))}")
-                if original:
-                    st.markdown(f"[فتح صفحة المصدر الأصلية]({original})")
-                st.caption("المتاح هنا عنوان وبيانات وصفية علنية. لو النص الكامل خلف اشتراك، لن نحاول استخراجه أو تخطي بوابة الدفع.")
-                links_paid = paid_radar_mod.legal_search_links(title_en, original)
-                st.markdown("**مسارات البحث والوصول القانوني:** " + " · ".join(f"[{label}]({url})" for label, url in links_paid))
-                if st.button("🌐 ابحث عن تغطيات مفتوحة لنفس الموضوع", key=f"paid_alt_{key}", use_container_width=True):
-                    with st.spinner("بنقارن العنوان بمصادر مفتوحة ووكالات أنباء ومراكز أبحاث…"):
-                        alts, note_alt = paid_radar_mod.find_open_coverage(title_en, host, paid_data.get("days", 30), 8)
-                    st.session_state["paid_radar_alternatives"][key] = {"items": alts, "note": note_alt}
-                alt_data = st.session_state.get("paid_radar_alternatives", {}).get(key)
-                if alt_data:
-                    st.info(alt_data.get("note", ""))
-                    for j, alt in enumerate(alt_data.get("items", [])):
-                        st.markdown(f"**{j+1}. {alt.get('title_ar') or alt.get('title')}**")
-                        st.caption(f"{alt.get('source_name')} · {alt.get('domain')} · {alt.get('match_label')} · درجة تشابه العنوان {alt.get('match_score', 0):.0%}")
-                        st.markdown(f"[فتح التغطية المفتوحة]({alt.get('url')})")
-                        alt_key = hashlib.sha256(alt.get("url", "").encode("utf-8")).hexdigest()[:14]
-                        if st.button("📖 اقرأ وترجم النص المتاح مباشرة", key=f"paid_read_{key}_{alt_key}"):
-                            with st.spinner("جارٍ قراءة الصفحة المفتوحة وترجمتها…"):
-                                article, read_note = paid_radar_mod.read_open_article(alt.get("url", ""))
-                            st.session_state["paid_radar_read"][alt_key] = {"article": article, "note": read_note}
-                        read_data = st.session_state.get("paid_radar_read", {}).get(alt_key)
-                        if read_data:
-                            st.caption(read_data.get("note", ""))
-                            if read_data.get("article"):
-                                art = read_data["article"]
-                                st.markdown(f"**النص المترجم للعربية:**\n\n{art.get('text_ar', '')}")
-                                with st.expander("عرض النص الأصلي"):
-                                    st.write(art.get("text", ""))
-                        st.divider()
-    else:
-        st.info("ابدأ بجمع العناوين. بعد ظهورها، افتح أي عنوان واضغط البحث عن تغطيات مفتوحة.")
+            br_pick = st.selectbox("المصدر", list(pool_all.keys()), key="br_src")
+            lbl, dom_s, lang_s = pool_all[br_pick]
+            dlist = [d for d in dom_s.split("|") if d]
+            secs = []
+            for d in dlist:
+                secs += [(n, u, k) for n, u, k in SECTIONS.get(d, [])]
+            secs.append(("الصفحة الرئيسية", f"https://{dlist[0]}/", None))
+            secs.append(("🔗 رابط قسم آخر (أدخله بنفسك)", "", None))
+            sec_names = [x[0] for x in secs]
+            sec_pick = st.radio("القسم", sec_names, horizontal=True, key="br_sec")
+            sname_, surl_, skind_ = secs[sec_names.index(sec_pick)]
+            if not surl_:
+                surl_ = st.text_input("رابط صفحة القسم (من موقع هذا المصدر)", key="br_url", placeholder=f"https://{dlist[0]}/opinion").strip()
+            if st.button("افتح القسم وترجمه", type="primary", use_container_width=True, key="go_br"):
+                if not surl_.startswith("http"):
+                    st.warning("أدخل رابطاً صحيحاً.")
+                else:
+                    browse_run(lbl, dlist, "he" if lang_s == "he" else "en", sname_, surl_, skind_)
+            render_results("br")
 
 
-with tab_health:
-    st.markdown("### 🩺 صحة المصادر واكتشاف تغيّر RSS")
-    st.caption("يفحص الوصول للموقع الرئيسي، ويبحث عن RSS/Atom المعلن أو المسارات الشائعة. فشل الفحص لا يعني بالضرورة أن المصدر متوقف؛ بعض المواقع تحجب الطلبات الآلية أو تغيّر سياساتها.")
-    health_names = sorted({x["name"] for x in source_intel_mod.SOURCE_CATALOG})
-    priority_health = [n for n in ("Reuters", "BBC", "The Guardian", "The New York Times", "The Washington Post", "Haaretz (عبري)", "هآرتس (إنجليزي)", "Ynetnews (إنجليزي)", "Times of Israel", "IDF Spokesperson", "Pentagon / US Department of Defense", "ODNI", "CIA", "UK Government (MOD / FCDO)", "SIS", "Tactical Report", "Sudan Tribune", "Radio Dabanga", "Sana'a Center", "Yemen Monitor") if n in health_names]
-    health_scope = st.radio("نطاق الفحص", ["المصادر الأساسية المقترحة", "اختيار المصادر", "كل المصادر المسجلة"], horizontal=True, key="src_health_scope")
-    if health_scope == "المصادر الأساسية المقترحة":
-        health_selected = priority_health or health_names[:20]
-    elif health_scope == "اختيار المصادر":
-        health_selected = st.multiselect("اختار المصادر المراد فحصها", health_names, default=priority_health, key="src_health_pick")
-    else:
-        health_selected = health_names
-        st.warning(f"سيتم فحص {len(source_intel_mod.SOURCE_CATALOG)} نطاقاً. بعض المواقع قد تستغرق وقتاً أو تحجب الفحص الآلي.")
-    hc1, hc2 = st.columns([1, 2])
-    health_timeout = hc1.select_slider("مهلة كل موقع (ثانية)", options=[4, 6, 8, 10, 12], value=8, key="src_health_timeout")
-    if hc2.button("🔍 افحص المصادر الآن", type="primary", use_container_width=True, key="run_source_health", disabled=not health_selected):
-        with st.spinner(f"جارٍ فحص {len(health_selected)} نطاقاً واكتشاف خلاصات RSS/Atom…"):
-            health_result = source_intel_mod.scan_sources(health_selected, timeout=health_timeout)
-            previous_health = next((x for x in S().get("source_health_runs", []) if x.get("rows")), None)
-            health_result = source_intel_mod.compare_health_runs(health_result, previous_health)
-        st.session_state["source_health_latest"] = health_result
-        S()["source_health_runs"] = ([health_result] + S().get("source_health_runs", []))[:3]
-        persist()
-    health_result = st.session_state.get("source_health_latest")
-    if health_result:
-        counts = health_result.get("counts", {})
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("إجمالي الفحص", health_result.get("total", 0))
-        m2.metric("موقع + RSS", counts.get("healthy_feed", 0))
-        m3.metric("موقع متاح بلا RSS", counts.get("healthy_no_feed", 0))
-        m4.metric("تعذر الوصول/أخطاء", sum(v for k, v in counts.items() if k not in ("healthy_feed", "healthy_no_feed")))
-        st.caption(f"وقت الفحص: {health_result.get('checked_at', '')}")
-        display_rows = [{"المصدر": x.get("name"), "النطاق": x.get("domain"), "المنظور": source_intel_mod.SIDE_LABELS.get(x.get("side"), "دولي"),
-                         "الحالة": x.get("status"), "HTTP": x.get("http_status"), "الزمن ms": x.get("latency_ms"),
-                         "RSS/Atom": x.get("feed_url"), "آخر عنوان": x.get("latest_item"), "آخر تاريخ": x.get("latest_item_date"),
-                         "التغير عن الفحص السابق": x.get("change_note", ""), "آخر فحص ناجح": x.get("last_successful_check", ""), "ملاحظة": x.get("error")} for x in health_result.get("rows", [])]
-        st.dataframe(display_rows, use_container_width=True, hide_index=True)
-        import csv, io
-        csv_buffer = io.StringIO()
-        if display_rows:
-            writer = csv.DictWriter(csv_buffer, fieldnames=list(display_rows[0].keys()))
-            writer.writeheader(); writer.writerows(display_rows)
-        st.download_button("⬇️ تنزيل تقرير صحة المصادر CSV", csv_buffer.getvalue().encode("utf-8-sig"), file_name="marsad_source_health.csv", mime="text/csv", key="download_source_health")
-        st.caption("healthy_no_feed = الموقع متاح لكن لم نعثر على RSS عام. unreachable_or_blocked/timeout لا يثبتان توقف الموقع؛ قد يكون الحجب أو DNS أو مهلة الاتصال.")
-    else:
-        st.info("ابدأ بفحص المصادر الأساسية، أو اختر مجموعة أكبر لمراجعة حالة المواقع وخلاصاتها.")
+try:
+    seed_from_auto()
+except Exception:
+    pass
+
+if _on("search", "paid"):
+    with tab_paid:
+        auto_note("paid")
+        st.markdown("### 🧾 رادار المقالات والتقارير المدفوعة")
+        st.caption("يرصد العناوين والبيانات المنشورة علناً في المصادر ذات المحتوى المدفوع أو المحدود الوصول، ثم يبحث عن تغطية مفتوحة لنفس الخبر أو الموضوع. لا يحاول تجاوز الاشتراك ولا يعرض نصاً محمياً.")
+        st.markdown("[فهرس تقارير Tactical Report](https://www.tacticalreport.com/reports) · [النشرات والتنبيهات](https://www.tacticalreport.com/newsletters) · [المنتجات وطرق الاشتراك](https://www.tacticalreport.com/products)")
+        paid_names = [x[0] for x in paid_radar_mod.PAID_SOURCES]
+        paid_defaults = paid_radar_mod.AUTO_DEFAULTS
+        chosen_paid = st.multiselect("المصادر التي تريد مراقبة عناوينها", paid_names,
+                                     default=[x for x in paid_defaults if x in paid_names], key="paid_sources_pick")
+        pcol1, pcol2 = st.columns([1, 2])
+        with pcol1:
+            paid_days_label = st.selectbox("الفترة الزمنية", ["آخر 24 ساعة", "آخر 3 أيام", "آخر 7 أيام", "آخر 14 يوماً", "آخر 30 يوماً"],
+                                           index=2, key="paid_days")
+        with pcol2:
+            paid_query = st.text_input("كلمات أو ملف بحث (اختياري)", placeholder="إيران، البحر الأحمر، مصر، صفقات السلاح...", key="paid_query")
+        paid_days = {"آخر 24 ساعة": 1, "آخر 3 أيام": 3, "آخر 7 أيام": 7, "آخر 14 يوماً": 14, "آخر 30 يوماً": 30}[paid_days_label]
+        with st.expander("🔎 عندك عنوان تقرير مدفوع بالفعل؟ ابحث عنه مباشرة"):
+            manual_title = st.text_input("الصق عنوان التقرير أو المقال", key="paid_manual_title", placeholder="Paste the exact English or Hebrew headline...")
+            if st.button("ابحث عن إعادة نشر وتغطيات مفتوحة", key="paid_manual_find", disabled=len(manual_title.strip()) < 8):
+                with st.spinner("جارٍ البحث عن العنوان والتغطيات المرتبطة في المصادر المفتوحة…"):
+                    manual_alts, manual_note = paid_radar_mod.find_open_coverage(manual_title.strip(), "", paid_days, 10)
+                st.session_state["paid_manual_alternatives"] = {"items": manual_alts, "note": manual_note, "title": manual_title.strip()}
+            manual_data = st.session_state.get("paid_manual_alternatives")
+            if manual_data:
+                st.info(manual_data.get("note", ""))
+                st.markdown(f"**العنوان:** {core.tr(manual_data.get('title', ''), 'auto', 'ar')}")
+                for k, alt in enumerate(manual_data.get("items", [])):
+                    st.markdown(f"**{k+1}. {alt.get('title_ar') or alt.get('title')}**")
+                    st.caption(f"{alt.get('source_name')} · {alt.get('domain')} · {alt.get('match_label')}")
+                    st.markdown(f"[فتح التغطية]({alt.get('url')})")
+        if st.button("🔎 اجمع العناوين المدفوعة وابحث عن الجديد", type="primary", use_container_width=True, key="paid_scan"):
+            if not chosen_paid:
+                st.warning("اختار مصدراً واحداً على الأقل.")
+            else:
+                terms_paid = [x.strip() for x in TERM_SPLIT.split(paid_query) if x.strip()] if paid_query.strip() else None
+                with st.spinner("جارٍ رصد العناوين المنشورة علناً وترجمتها للعربية…"):
+                    paid_items, paid_notes = paid_radar_mod.search_paid_headlines(chosen_paid, paid_days, terms_paid, max_items=120)
+                    core.translate_titles(paid_items)
+                st.session_state["paid_radar_results"] = {"items": paid_items, "notes": paid_notes, "days": paid_days}
+                st.session_state["paid_radar_alternatives"] = {}
+                st.session_state["paid_radar_read"] = {}
+        paid_data = st.session_state.get("paid_radar_results")
+        if paid_data:
+            for note in paid_data.get("notes", []):
+                st.caption(note)
+            paid_items = paid_data.get("items", [])
+            st.markdown(f"**{len(paid_items)} عنواناً مرصوداً** خلال آخر {paid_data.get('days', paid_days)} يوم")
+            if not paid_items:
+                st.info("لم تظهر عناوين من المصادر المحددة في الفترة. جرّب توسيع الفترة أو إزالة الكلمات المفتاحية.")
+            for ix, item in enumerate(paid_items):
+                original = item.get("original_paid_url") or item.get("url", "")
+                host = item.get("domain", "")
+                title_ar = item.get("title_ar") or item.get("title", "")
+                title_en = item.get("title", "")
+                key = hashlib.sha256((original or title_en).encode("utf-8")).hexdigest()[:14]
+                with st.expander(f"{ix+1}. {title_ar[:150]}", expanded=False):
+                    st.markdown(f"**العنوان بالعربية:** {title_ar}")
+                    st.markdown(f"**العنوان الأصلي:** {title_en}")
+                    st.markdown(f"**المصدر:** {item.get('paid_source', source_name(host))} · {item.get('paid_country', '')} · `{host}`")
+                    st.markdown(f"**التاريخ:** {fmt_seen(item.get('seendate', ''))}")
+                    if original:
+                        st.markdown(f"[فتح صفحة المصدر الأصلية]({original})")
+                    st.caption("المتاح هنا عنوان وبيانات وصفية علنية. لو النص الكامل خلف اشتراك، لن نحاول استخراجه أو تخطي بوابة الدفع.")
+                    links_paid = paid_radar_mod.legal_search_links(title_en, original)
+                    st.markdown("**مسارات البحث والوصول القانوني:** " + " · ".join(f"[{label}]({url})" for label, url in links_paid))
+                    if st.button("🌐 ابحث عن تغطيات مفتوحة لنفس الموضوع", key=f"paid_alt_{key}", use_container_width=True):
+                        with st.spinner("بنقارن العنوان بمصادر مفتوحة ووكالات أنباء ومراكز أبحاث…"):
+                            alts, note_alt = paid_radar_mod.find_open_coverage(title_en, host, paid_data.get("days", 30), 8)
+                        st.session_state["paid_radar_alternatives"][key] = {"items": alts, "note": note_alt}
+                    alt_data = st.session_state.get("paid_radar_alternatives", {}).get(key)
+                    if alt_data:
+                        st.info(alt_data.get("note", ""))
+                        for j, alt in enumerate(alt_data.get("items", [])):
+                            st.markdown(f"**{j+1}. {alt.get('title_ar') or alt.get('title')}**")
+                            st.caption(f"{alt.get('source_name')} · {alt.get('domain')} · {alt.get('match_label')} · درجة تشابه العنوان {alt.get('match_score', 0):.0%}")
+                            st.markdown(f"[فتح التغطية المفتوحة]({alt.get('url')})")
+                            alt_key = hashlib.sha256(alt.get("url", "").encode("utf-8")).hexdigest()[:14]
+                            if st.button("📖 اقرأ وترجم النص المتاح مباشرة", key=f"paid_read_{key}_{alt_key}"):
+                                with st.spinner("جارٍ قراءة الصفحة المفتوحة وترجمتها…"):
+                                    article, read_note = paid_radar_mod.read_open_article(alt.get("url", ""))
+                                st.session_state["paid_radar_read"][alt_key] = {"article": article, "note": read_note}
+                            read_data = st.session_state.get("paid_radar_read", {}).get(alt_key)
+                            if read_data:
+                                st.caption(read_data.get("note", ""))
+                                if read_data.get("article"):
+                                    art = read_data["article"]
+                                    st.markdown(f"**النص المترجم للعربية:**\n\n{art.get('text_ar', '')}")
+                                    with st.expander("عرض النص الأصلي"):
+                                        st.write(art.get("text", ""))
+                            st.divider()
+        else:
+            st.info("ابدأ بجمع العناوين. بعد ظهورها، افتح أي عنوان واضغط البحث عن تغطيات مفتوحة.")
 
 
-with tab_clusters:
-    st.markdown("### 🧩 تجميع الأحداث ومقارنة الروايات")
-    st.caption("يجمع عناوين من GDELT وGoogle News RSS، ثم يربط التغطيات المتقاربة ويقسمها حسب المنظور الجغرافي. لا يستنتج الموقف السياسي من العنوان وحده ولا يعتبر التشابه دليلاً على إعادة النشر.")
-    cluster_query = st.text_input("موضوع القضية أو الحدث", placeholder="مثال: تحركات الأسطول الأمريكي في البحر الأحمر أو مفاوضات إيران النووية", key="intel_cluster_query")
-    cc1, cc2 = st.columns(2)
-    cluster_days = cc1.selectbox("الفترة", [1, 3, 7, 14, 30, 60, 90], index=2, key="intel_cluster_days")
-    cluster_limit = cc2.selectbox("الحد الأقصى للعناوين", [40, 80, 120, 180, 240], index=2, key="intel_cluster_limit")
-    cluster_sides = st.multiselect("المنظورات المطلوب مقارنتها", ["us", "il", "uk", "ar"], default=["us", "il", "uk", "ar"],
-                                   format_func=lambda x: {"us": "🇺🇸 أمريكي", "il": "🇮🇱 إسرائيلي", "uk": "🇬🇧 بريطاني", "ar": "🌍 عربي/إقليمي"}[x], key="intel_cluster_sides")
-    if st.button("🛰️ اجمع التغطيات واربط الأحداث", type="primary", use_container_width=True, key="run_intel_cluster", disabled=len(cluster_query.strip()) < 3):
-        with st.spinner("جارٍ البحث في GDELT وGoogle News RSS، وترجمة العناوين وربط التغطيات…"):
-            cluster_articles, cluster_notes = source_intel_mod.collect_articles(cluster_query, cluster_days, cluster_limit, tuple(cluster_sides))
-            cluster_groups = source_intel_mod.cluster_articles(cluster_articles)
-            dossier = source_intel_mod.build_case_dossier(cluster_query, cluster_articles, cluster_groups)
-        st.session_state["intel_cluster_latest"] = dossier
-        st.session_state["intel_cluster_notes"] = cluster_notes
-        S()["intel_dossiers"] = ([dossier] + S().get("intel_dossiers", []))[:5]
-        persist()
-    dossier = st.session_state.get("intel_cluster_latest")
-    if dossier:
-        notes = st.session_state.get("intel_cluster_notes", [])
-        for note in notes[:12]:
-            st.caption(note)
-        d1, d2, d3 = st.columns(3)
-        d1.metric("العناوين المرصودة", dossier.get("article_count", 0))
-        d2.metric("مجموعات الأحداث", dossier.get("cluster_count", 0))
-        d3.metric("المصادر المختلفة", len({x.get("domain") for x in dossier.get("articles", [])}))
-        st.markdown(f"**ملف القضية:** {dossier.get('title_ar') or dossier.get('title')}")
-        if not dossier.get("event_clusters"):
-            st.info("ظهرت عناوين، لكن لم تتكون مجموعات متقاربة من مصدرين أو أكثر. يمكنك مراجعة كل العناوين أو توسيع الفترة.")
-        for ci, group in enumerate(dossier.get("event_clusters", []), 1):
-            with st.expander(f"{ci}. {group.get('topic_ar')} · {group.get('article_count')} تغطية · {group.get('source_count')} مصدر", expanded=ci == 1):
-                st.caption("المنظورات الموجودة: " + "، ".join(group.get("sides", [])))
-                st.markdown("**مقارنة التغطيات حسب المنظور**")
-                for side_label, narrative_items in group.get("narratives", {}).items():
-                    st.markdown(f"**{side_label}**")
-                    for ni in narrative_items:
-                        st.markdown(f"- [{ni.get('title_ar') or ni.get('title')}]({ni.get('url')}) · {ni.get('source')} · {ni.get('kind')}")
-                st.markdown("**تقدير الأصل وإعادة النشر**")
-                for assessment in group.get("origin_assessments", []):
-                    st.markdown(f"- {assessment.get('source')} (`{assessment.get('domain')}`): {assessment.get('assessment')} · [المصدر]({assessment.get('url')})")
-                st.warning(group.get("caveat", "التصنيف آلي مبدئي ويحتاج مراجعة."))
-        with st.expander("كل العناوين المرصودة", expanded=False):
-            for article in dossier.get("articles", []):
-                st.markdown(f"- **{article.get('title_ar') or article.get('title')}** · {article.get('source_name')} · {article.get('side_label')} · {article.get('kind')} · [الرابط الأصلي]({article.get('url')})")
-        st.download_button("⬇️ تنزيل ملف القضية الموحد JSON", json.dumps(dossier, ensure_ascii=False, indent=2),
-                           file_name=f"marsad-case-{dossier.get('case_id', 'export')}.json", mime="application/json", key="download_intel_dossier")
-        st.markdown("**حدود المنهج:** أقدم تاريخ ظهر في نتائجنا لا يعني بالضرورة أن هذا هو الناشر الأصلي. تطابق العناوين قد ينتج عن إعادة صياغة مستقلة، والتغطية العربية/الأجنبية قد تختلف في التوقيت والتفاصيل.")
-    else:
-        st.info("اكتب موضوعاً وحدد المنظورات والفترة، ثم ابدأ الجمع. سيُنشأ ملف قضية موحد قابل للتنزيل والحفظ في المرصد.")
-
-
-with tab_entities:
-    st.markdown("### 🧭 الكيانات والخط الزمني والتناقضات")
-    st.caption("طبقة ربط فوق ملفات 8.19: استخراج أسماء محددة من قاموس قابل للتوسيع، وربطها بالمصادر والقضايا القديمة. التناقضات مرشحات للمراجعة وليست أحكاماً آلية.")
-    saved_dossiers = S().get("intel_dossiers", [])
-    dossier_options = {f"{x.get('title_ar') or x.get('title') or 'ملف'} · {x.get('created_at','')[:10]} · {x.get('id','')[-6:]}": x for x in saved_dossiers}
-    if dossier_options:
-        selected_dossier_label = st.selectbox("اختر ملف تغطيات محفوظاً", list(dossier_options), key="entity_dossier_pick")
-        entity_case_pool = S().get("research_cases", [])
-        if st.button("🧠 حلّل الكيانات واربطه بالقضايا القديمة", type="primary", use_container_width=True, key="enrich_entity_dossier"):
-            with st.spinner("جارٍ استخراج الكيانات وبناء الخط الزمني وفحص المرشحات وربط الملفات…"):
-                enriched = entity_intel_mod.enrich_dossier(dossier_options[selected_dossier_label], entity_case_pool)
-            S()["intel_dossiers"] = [enriched if x.get("id") == enriched.get("id") else x for x in saved_dossiers]
-            st.session_state["entity_intel_latest"] = enriched
+if _on("intel", "health"):
+    with tab_health:
+        st.markdown("### 🩺 صحة المصادر واكتشاف تغيّر RSS")
+        auto_note("health")
+        st.caption("يفحص الوصول للموقع الرئيسي، ويبحث عن RSS/Atom المعلن أو المسارات الشائعة. فشل الفحص لا يعني بالضرورة أن المصدر متوقف؛ بعض المواقع تحجب الطلبات الآلية أو تغيّر سياساتها.")
+        health_names = sorted({x["name"] for x in source_intel_mod.SOURCE_CATALOG})
+        priority_health = [n for n in ("Reuters", "BBC", "The Guardian", "The New York Times", "The Washington Post", "Haaretz (عبري)", "هآرتس (إنجليزي)", "Ynetnews (إنجليزي)", "Times of Israel", "IDF Spokesperson", "Pentagon / US Department of Defense", "ODNI", "CIA", "UK Government (MOD / FCDO)", "SIS", "Tactical Report", "Sudan Tribune", "Radio Dabanga", "Sana'a Center", "Yemen Monitor") if n in health_names]
+        health_scope = st.radio("نطاق الفحص", ["المصادر الأساسية المقترحة", "اختيار المصادر", "كل المصادر المسجلة"], horizontal=True, key="src_health_scope")
+        if health_scope == "المصادر الأساسية المقترحة":
+            health_selected = priority_health or health_names[:20]
+        elif health_scope == "اختيار المصادر":
+            health_selected = st.multiselect("اختار المصادر المراد فحصها", health_names, default=priority_health, key="src_health_pick")
+        else:
+            health_selected = health_names
+            st.warning(f"سيتم فحص {len(source_intel_mod.SOURCE_CATALOG)} نطاقاً. بعض المواقع قد تستغرق وقتاً أو تحجب الفحص الآلي.")
+        hc1, hc2 = st.columns([1, 2])
+        health_timeout = pick(hc1, "مهلة كل موقع (ثانية)", [4, 6, 8, 10, 12], 8, "src_health_timeout")
+        if hc2.button("🔍 افحص المصادر الآن", type="primary", use_container_width=True, key="run_source_health", disabled=not health_selected):
+            with st.spinner(f"جارٍ فحص {len(health_selected)} نطاقاً واكتشاف خلاصات RSS/Atom…"):
+                health_result = source_intel_mod.scan_sources(health_selected, timeout=health_timeout)
+                previous_health = next((x for x in S().get("source_health_runs", []) if x.get("rows")), None)
+                health_result = source_intel_mod.compare_health_runs(health_result, previous_health)
+            st.session_state["source_health_latest"] = health_result
+            S()["source_health_runs"] = ([health_result] + S().get("source_health_runs", []))[:3]
             persist()
-        enriched = st.session_state.get("entity_intel_latest")
-        if not enriched or enriched.get("id") != dossier_options[selected_dossier_label].get("id"):
-            enriched = dossier_options[selected_dossier_label]
-        if enriched.get("entity_index") is not None:
-            entities = enriched.get("entity_index", [])
-            timeline = enriched.get("publication_timeline", [])
-            contradictions = enriched.get("contradiction_candidates", [])
-            prior_matches = enriched.get("prior_case_matches", [])
-            e1, e2, e3, e4 = st.columns(4)
-            e1.metric("كيانات مستخرجة", len(entities)); e2.metric("مواد مؤرخة", len(timeline))
-            e3.metric("تعارضات مرشحة", len(contradictions)); e4.metric("روابط لقضايا قديمة", len(prior_matches))
-            with st.expander("🧩 فهرس الكيانات ومصادر ذكرها", expanded=True):
-                for ent in entities:
-                    st.markdown(f"**{ent['name']}** · `{ent['type']}` · {ent['mention_count']} ذكر · {len(ent['source_domains'])} نطاق")
-                    for mention in ent.get("mentions", [])[:5]:
-                        st.markdown(f"- {mention.get('published_at') or 'تاريخ غير متاح'} · {mention.get('source') or mention.get('domain')} · [{mention.get('title') or 'المادة'}]({mention.get('url')})")
-            with st.expander("🕒 الخط الزمني للنشر", expanded=False):
-                for item in timeline:
-                    st.markdown(f"- **{item['timestamp']}** · {item['source']} · [{item['title']}]({item['url']})")
-                    st.caption(item['time_basis'])
-            with st.expander("⚖️ مرشحات التناقض بين الادعاءات", expanded=False):
-                if not contradictions: st.info("لم يظهر تعارض لغوي واضح ضمن العينة الحالية. هذا لا يعني عدم وجود تناقضات.")
-                for item in contradictions:
-                    st.markdown(f"**مرشح مراجعة · تشابه مفردات {item['overlap']:.0%}**")
-                    st.write("الادعاء/النص الأول: " + item['claim_a'][:700])
-                    st.markdown(f"المصدر: [{item['source_a']['name'] or 'رابط'}]({item['source_a']['url']})")
-                    st.write("الادعاء/النص الثاني: " + item['claim_b'][:700])
-                    st.markdown(f"المصدر: [{item['source_b']['name'] or 'رابط'}]({item['source_b']['url']})")
-                    st.warning(item['caveat'])
-            with st.expander("🔗 ربط التغطيات بملفات القضايا السابقة", expanded=False):
-                if not prior_matches: st.info("لم يظهر تطابق موضوعي كافٍ مع الملفات البحثية المحفوظة.")
-                for match in prior_matches:
-                    st.markdown(f"**{match['article']['title']}** · [{match['article']['source'] or 'المصدر'}]({match['article']['url']})")
-                    for candidate in match['matches']:
-                        st.markdown(f"- **{candidate['case_title']}** · درجة التشابه الإرشادية {candidate['score']}/100 · {candidate['level']}")
-                        st.caption("؛ ".join(candidate.get('reasons', [])))
-                        if st.button("➕ أضف المادة إلى هذا الملف البحثي", key=f"attach_entity_article_{candidate['case_id']}_{hashlib.sha1(match['article']['url'].encode()).hexdigest()[:8]}"):
-                            target_case = next((x for x in S().get("research_cases", []) if x.get("id") == candidate["case_id"]), None)
-                            original_article = next((x for x in enriched.get("articles", []) if x.get("url") == match["article"]["url"]), None)
-                            if target_case and original_article:
-                                added = casebook_mod.add_material(target_case, original_article, material_type="خبر", note="أضيف بعد مراجعة اقتراح الربط من Phase 8.20")
-                                persist()
-                                st.success("تمت إضافة المادة إلى الملف." if added else "المادة موجودة بالفعل في الملف.")
-                                st.rerun()
-            st.download_button("⬇️ تنزيل ملف التحليل الموسع JSON", json.dumps(enriched, ensure_ascii=False, indent=2),
-                file_name=f"marsad-entity-analysis-{enriched.get('id','case')}.json", mime="application/json", key="download_entity_enriched")
-            st.caption("ملاحظة منهجية: قاموس الكيانات ليس شاملاً. تواريخ المواد هي تواريخ نشر لا أوقات وقوع الأحداث. تشابه القضايا لا يثبت علاقة سببية، والتعارض يحتاج مراجعة النصوص الأصلية والسياق.")
+        health_result = st.session_state.get("source_health_latest")
+        if health_result:
+            counts = health_result.get("counts", {})
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("إجمالي الفحص", health_result.get("total", 0))
+            m2.metric("موقع + RSS", counts.get("healthy_feed", 0))
+            m3.metric("موقع متاح بلا RSS", counts.get("healthy_no_feed", 0))
+            m4.metric("تعذر الوصول/أخطاء", sum(v for k, v in counts.items() if k not in ("healthy_feed", "healthy_no_feed")))
+            st.caption(f"وقت الفحص: {health_result.get('checked_at', '')}")
+            display_rows = [{"المصدر": x.get("name"), "النطاق": x.get("domain"), "المنظور": source_intel_mod.SIDE_LABELS.get(x.get("side"), "دولي"),
+                             "الحالة": x.get("status"), "HTTP": x.get("http_status"), "الزمن ms": x.get("latency_ms"),
+                             "RSS/Atom": x.get("feed_url"), "آخر عنوان": x.get("latest_item"), "آخر تاريخ": x.get("latest_item_date"),
+                             "التغير عن الفحص السابق": x.get("change_note", ""), "آخر فحص ناجح": x.get("last_successful_check", ""), "ملاحظة": x.get("error")} for x in health_result.get("rows", [])]
+            st.dataframe(display_rows, use_container_width=True, hide_index=True)
+            import csv, io
+            csv_buffer = io.StringIO()
+            if display_rows:
+                writer = csv.DictWriter(csv_buffer, fieldnames=list(display_rows[0].keys()))
+                writer.writeheader(); writer.writerows(display_rows)
+            st.download_button("⬇️ تنزيل تقرير صحة المصادر CSV", csv_buffer.getvalue().encode("utf-8-sig"), file_name="marsad_source_health.csv", mime="text/csv", key="download_source_health")
+            st.caption("healthy_no_feed = الموقع متاح لكن لم نعثر على RSS عام. unreachable_or_blocked/timeout لا يثبتان توقف الموقع؛ قد يكون الحجب أو DNS أو مهلة الاتصال.")
         else:
-            st.info("اختر ملفاً ثم اضغط تحليل الكيانات لبناء الفهرس والخط الزمني والروابط.")
-    else:
-        st.info("لا توجد ملفات تغطيات محفوظة بعد. أنشئ ملفاً من تبويب تجميع الأحداث والروايات أولاً، ثم ارجع هنا لتحليله وربطه بالقضايا القديمة.")
+            st.info("ابدأ بفحص المصادر الأساسية، أو اختر مجموعة أكبر لمراجعة حالة المواقع وخلاصاتها.")
+
+
+if _on("intel", "clusters"):
+    with tab_clusters:
+        st.markdown("### 🧩 تجميع الأحداث ومقارنة الروايات")
+        auto_note("dossier")
+        st.caption("يجمع عناوين من GDELT وGoogle News RSS، ثم يربط التغطيات المتقاربة ويقسمها حسب المنظور الجغرافي. لا يستنتج الموقف السياسي من العنوان وحده ولا يعتبر التشابه دليلاً على إعادة النشر.")
+        cluster_query = st.text_input("موضوع القضية أو الحدث", placeholder="مثال: تحركات الأسطول الأمريكي في البحر الأحمر أو مفاوضات إيران النووية", key="intel_cluster_query")
+        cc1, cc2 = st.columns(2)
+        cluster_days = cc1.selectbox("الفترة", [1, 3, 7, 14, 30, 60, 90], index=2, key="intel_cluster_days")
+        cluster_limit = cc2.selectbox("الحد الأقصى للعناوين", [40, 80, 120, 180, 240], index=2, key="intel_cluster_limit")
+        cluster_sides = st.multiselect("المنظورات المطلوب مقارنتها", ["us", "il", "uk", "ar"], default=["us", "il", "uk", "ar"],
+                                       format_func=lambda x: {"us": "🇺🇸 أمريكي", "il": "🇮🇱 إسرائيلي", "uk": "🇬🇧 بريطاني", "ar": "🌍 عربي/إقليمي"}[x], key="intel_cluster_sides")
+        if st.button("🛰️ اجمع التغطيات واربط الأحداث", type="primary", use_container_width=True, key="run_intel_cluster", disabled=len(cluster_query.strip()) < 3):
+            with st.spinner("جارٍ البحث في GDELT وGoogle News RSS، وترجمة العناوين وربط التغطيات…"):
+                cluster_articles, cluster_notes = source_intel_mod.collect_articles(cluster_query, cluster_days, cluster_limit, tuple(cluster_sides))
+                cluster_groups = source_intel_mod.cluster_articles(cluster_articles)
+                dossier = source_intel_mod.build_case_dossier(cluster_query, cluster_articles, cluster_groups)
+            st.session_state["intel_cluster_latest"] = dossier
+            st.session_state["intel_cluster_notes"] = cluster_notes
+            S()["intel_dossiers"] = ([dossier] + S().get("intel_dossiers", []))[:5]
+            persist()
+        dossier = st.session_state.get("intel_cluster_latest")
+        if dossier:
+            notes = st.session_state.get("intel_cluster_notes", [])
+            for note in notes[:12]:
+                st.caption(note)
+            d1, d2, d3 = st.columns(3)
+            d1.metric("العناوين المرصودة", dossier.get("article_count", 0))
+            d2.metric("مجموعات الأحداث", dossier.get("cluster_count", 0))
+            d3.metric("المصادر المختلفة", len({x.get("domain") for x in dossier.get("articles", [])}))
+            st.markdown(f"**ملف القضية:** {dossier.get('title_ar') or dossier.get('title')}")
+            if not dossier.get("event_clusters"):
+                st.info("ظهرت عناوين، لكن لم تتكون مجموعات متقاربة من مصدرين أو أكثر. يمكنك مراجعة كل العناوين أو توسيع الفترة.")
+            for ci, group in enumerate(dossier.get("event_clusters", []), 1):
+                with st.expander(f"{ci}. {group.get('topic_ar')} · {group.get('article_count')} تغطية · {group.get('source_count')} مصدر", expanded=ci == 1):
+                    st.caption("المنظورات الموجودة: " + "، ".join(group.get("sides", [])))
+                    st.markdown("**مقارنة التغطيات حسب المنظور**")
+                    for side_label, narrative_items in group.get("narratives", {}).items():
+                        st.markdown(f"**{side_label}**")
+                        for ni in narrative_items:
+                            st.markdown(f"- [{ni.get('title_ar') or ni.get('title')}]({ni.get('url')}) · {ni.get('source')} · {ni.get('kind')}")
+                    st.markdown("**تقدير الأصل وإعادة النشر**")
+                    for assessment in group.get("origin_assessments", []):
+                        st.markdown(f"- {assessment.get('source')} (`{assessment.get('domain')}`): {assessment.get('assessment')} · [المصدر]({assessment.get('url')})")
+                    st.warning(group.get("caveat", "التصنيف آلي مبدئي ويحتاج مراجعة."))
+            with st.expander("كل العناوين المرصودة", expanded=False):
+                for article in dossier.get("articles", []):
+                    st.markdown(f"- **{article.get('title_ar') or article.get('title')}** · {article.get('source_name')} · {article.get('side_label')} · {article.get('kind')} · [الرابط الأصلي]({article.get('url')})")
+            st.download_button("⬇️ تنزيل ملف القضية الموحد JSON", json.dumps(dossier, ensure_ascii=False, indent=2),
+                               file_name=f"marsad-case-{dossier.get('case_id', 'export')}.json", mime="application/json", key="download_intel_dossier")
+            st.markdown("**حدود المنهج:** أقدم تاريخ ظهر في نتائجنا لا يعني بالضرورة أن هذا هو الناشر الأصلي. تطابق العناوين قد ينتج عن إعادة صياغة مستقلة، والتغطية العربية/الأجنبية قد تختلف في التوقيت والتفاصيل.")
+        else:
+            st.info("اكتب موضوعاً وحدد المنظورات والفترة، ثم ابدأ الجمع. سيُنشأ ملف قضية موحد قابل للتنزيل والحفظ في المرصد.")
+
+
+if _on("intel", "entities"):
+    with tab_entities:
+        st.markdown("### 🧭 الكيانات والخط الزمني والتناقضات")
+        st.caption("طبقة ربط فوق ملفات 8.19: استخراج أسماء محددة من قاموس قابل للتوسيع، وربطها بالمصادر والقضايا القديمة. التناقضات مرشحات للمراجعة وليست أحكاماً آلية.")
+        saved_dossiers = S().get("intel_dossiers", [])
+        auto_note("dossier")
+        _auto_d = auto_intel().get("dossier")
+        if _auto_d and _auto_d.get("id") not in {x.get("id") for x in saved_dossiers}:
+            saved_dossiers = [_auto_d] + list(saved_dossiers)
+        dossier_options = {f"{x.get('title_ar') or x.get('title') or 'ملف'} · {x.get('created_at','')[:10]} · {x.get('id','')[-6:]}": x for x in saved_dossiers}
+        if dossier_options:
+            selected_dossier_label = st.selectbox("اختر ملف تغطيات محفوظاً", list(dossier_options), key="entity_dossier_pick")
+            entity_case_pool = S().get("research_cases", [])
+            if st.button("🧠 حلّل الكيانات واربطه بالقضايا القديمة", type="primary", use_container_width=True, key="enrich_entity_dossier"):
+                with st.spinner("جارٍ استخراج الكيانات وبناء الخط الزمني وفحص المرشحات وربط الملفات…"):
+                    enriched = entity_intel_mod.enrich_dossier(dossier_options[selected_dossier_label], entity_case_pool)
+                S()["intel_dossiers"] = [enriched if x.get("id") == enriched.get("id") else x for x in saved_dossiers if not x.get("auto")]
+                st.session_state["entity_intel_latest"] = enriched
+                persist()
+            enriched = st.session_state.get("entity_intel_latest")
+            if not enriched or enriched.get("id") != dossier_options[selected_dossier_label].get("id"):
+                enriched = dossier_options[selected_dossier_label]
+            if enriched.get("entity_index") is not None:
+                entities = enriched.get("entity_index", [])
+                timeline = enriched.get("publication_timeline", [])
+                contradictions = enriched.get("contradiction_candidates", [])
+                prior_matches = enriched.get("prior_case_matches", [])
+                e1, e2, e3, e4 = st.columns(4)
+                e1.metric("كيانات مستخرجة", len(entities)); e2.metric("مواد مؤرخة", len(timeline))
+                e3.metric("تعارضات مرشحة", len(contradictions)); e4.metric("روابط لقضايا قديمة", len(prior_matches))
+                with st.expander("🧩 فهرس الكيانات ومصادر ذكرها", expanded=True):
+                    for ent in entities:
+                        st.markdown(f"**{ent['name']}** · `{ent['type']}` · {ent['mention_count']} ذكر · {len(ent['source_domains'])} نطاق")
+                        for mention in ent.get("mentions", [])[:5]:
+                            st.markdown(f"- {mention.get('published_at') or 'تاريخ غير متاح'} · {mention.get('source') or mention.get('domain')} · [{mention.get('title') or 'المادة'}]({mention.get('url')})")
+                with st.expander("🕒 الخط الزمني للنشر", expanded=False):
+                    for item in timeline:
+                        st.markdown(f"- **{item['timestamp']}** · {item['source']} · [{item['title']}]({item['url']})")
+                        st.caption(item['time_basis'])
+                with st.expander("⚖️ مرشحات التناقض بين الادعاءات", expanded=False):
+                    if not contradictions: st.info("لم يظهر تعارض لغوي واضح ضمن العينة الحالية. هذا لا يعني عدم وجود تناقضات.")
+                    for item in contradictions:
+                        st.markdown(f"**مرشح مراجعة · تشابه مفردات {item['overlap']:.0%}**")
+                        st.write("الادعاء/النص الأول: " + item['claim_a'][:700])
+                        st.markdown(f"المصدر: [{item['source_a']['name'] or 'رابط'}]({item['source_a']['url']})")
+                        st.write("الادعاء/النص الثاني: " + item['claim_b'][:700])
+                        st.markdown(f"المصدر: [{item['source_b']['name'] or 'رابط'}]({item['source_b']['url']})")
+                        st.warning(item['caveat'])
+                with st.expander("🔗 ربط التغطيات بملفات القضايا السابقة", expanded=False):
+                    if not prior_matches: st.info("لم يظهر تطابق موضوعي كافٍ مع الملفات البحثية المحفوظة.")
+                    for match in prior_matches:
+                        st.markdown(f"**{match['article']['title']}** · [{match['article']['source'] or 'المصدر'}]({match['article']['url']})")
+                        for candidate in match['matches']:
+                            st.markdown(f"- **{candidate['case_title']}** · درجة التشابه الإرشادية {candidate['score']}/100 · {candidate['level']}")
+                            st.caption("؛ ".join(candidate.get('reasons', [])))
+                            if st.button("➕ أضف المادة إلى هذا الملف البحثي", key=f"attach_entity_article_{candidate['case_id']}_{hashlib.sha1(match['article']['url'].encode()).hexdigest()[:8]}"):
+                                target_case = next((x for x in S().get("research_cases", []) if x.get("id") == candidate["case_id"]), None)
+                                original_article = next((x for x in enriched.get("articles", []) if x.get("url") == match["article"]["url"]), None)
+                                if target_case and original_article:
+                                    added = casebook_mod.add_material(target_case, original_article, material_type="خبر", note="أضيف بعد مراجعة اقتراح الربط من Phase 8.20")
+                                    persist()
+                                    st.success("تمت إضافة المادة إلى الملف." if added else "المادة موجودة بالفعل في الملف.")
+                                    st.rerun()
+                st.download_button("⬇️ تنزيل ملف التحليل الموسع JSON", json.dumps(enriched, ensure_ascii=False, indent=2),
+                    file_name=f"marsad-entity-analysis-{enriched.get('id','case')}.json", mime="application/json", key="download_entity_enriched")
+                st.caption("ملاحظة منهجية: قاموس الكيانات ليس شاملاً. تواريخ المواد هي تواريخ نشر لا أوقات وقوع الأحداث. تشابه القضايا لا يثبت علاقة سببية، والتعارض يحتاج مراجعة النصوص الأصلية والسياق.")
+            else:
+                st.info("اختر ملفاً ثم اضغط تحليل الكيانات لبناء الفهرس والخط الزمني والروابط.")
+        else:
+            st.info("لا توجد ملفات تغطيات محفوظة بعد. أنشئ ملفاً من تبويب تجميع الأحداث والروايات أولاً، ثم ارجع هنا لتحليله وربطه بالقضايا القديمة.")
 
 for _n, _d, _sd, _k, _f in intel.SOURCES:
     DOMAIN_LABELS.setdefault(_d, _n)
@@ -2490,161 +2622,164 @@ def intel_matrix(view):
         st.caption("لا توجد عناوين تخص مصر ضمن النتائج الحالية.")
 
 
-with tab_in:
-    st.caption("مكتب استخبارات مفتوح المصدر للشرق الأوسط والقرن الأفريقي: تصفّح مؤسسة واحدة أو عدة مؤسسات أو كلها، وأضف التحركات المصرية لأي ملف، "
-               "وقارن المنظورات في جدول ربط، ثم اصنع تقريراً. التصنيف تقديري من العنوان والرابط ولا يُغني عن مراجعة المصدر.")
-    all_files = list(intel.FILES.keys())
-    if st.checkbox("اختر كل الملفات دفعة واحدة", value=False, key="in_allfiles"):
-        fnames = all_files
-    else:
-        fnames = st.multiselect("الملفات (اختر ملفاً أو أكثر، وسيُبحث فيها كلها معاً)", all_files, default=all_files[:1], key="in_files")
-    if not fnames:
-        st.warning("اختر ملفاً واحداً على الأقل.")
-        fnames = all_files[:1]
-    fname = " + ".join(fnames)
-    fmeta = {"terms": list(dict.fromkeys(t for f in fnames for t in intel.FILES[f]["terms"])),
-             "egypt": list(dict.fromkeys(t for f in fnames for t in intel.FILES[f]["egypt"])),
-             "axes": "؛ ".join(intel.FILES[f]["axes"] for f in fnames)}
-    st.markdown(f"**المحاور:** {fmeta['axes']}")
-    egm = st.radio("التحركات المصرية", ["الملف + التحركات المصرية", "الملف فقط", "التحركات المصرية فقط"], horizontal=True, key="in_eg")
-    base_terms = fmeta["terms"] if egm != "التحركات المصرية فقط" else []
-    eg_terms = fmeta["egypt"] if egm != "الملف فقط" else []
-    qmode = st.radio("طريقة العرض", ["🔎 بحث بكلمات الملف", "📰 اعرض كل ما نُشر (بدون كلمات)"], horizontal=True, key="in_qmode")
-    terms_txt = ""
-    if qmode.startswith("🔎"):
-        terms_txt = st.text_input("كلمات البحث (يمكن تعديلها؛ بالإنجليزية أو العربية، بفاصلة)", value="، ".join(base_terms + eg_terms),
-                                  key=f"in_terms_{fname}_{egm}")
-        if len(fnames) > 1:
-            st.caption(f"سيُبحث في {len(fnames)} ملفات معاً بكلماتها مجتمعة؛ قصّ الكلمات إن كانت كثيرة.")
-    names = [x[0] for x in intel.SOURCES]
-    side_list = [v for k, v in intel.SIDES.items() if k != "uk"]
-    side_codes = {v: k for k, v in intel.SIDES.items()}
-    scope_i = st.radio("المؤسسات", ["مؤسسة واحدة", "عدة مؤسسات", "كل المؤسسات"], horizontal=True, key="in_scope", index=1)
-    if scope_i == "مؤسسة واحدة":
-        picked = [st.selectbox("المؤسسة", names, key="in_one")]
-    elif scope_i == "كل المؤسسات":
-        picked = names
-    else:
-        sides_pick = st.multiselect("المنظورات", side_list, default=side_list, key="in_sides")
-        default_src = [x[0] for x in intel.SOURCES if intel.SIDES[x[2]] in sides_pick]
-        picked = st.multiselect("المؤسسات", names, default=default_src, key=f"in_src_{'_'.join(sorted(side_codes[x] for x in sides_pick))}")
-    days_i = st.selectbox("الفترة", ["آخر 7 أيام", "آخر 14 يوماً", "آخر 30 يوماً", "آخر 90 يوماً"], index=1, key="in_days")
-    days_n = int(re.findall(r"\d+", days_i)[0])
-    with_media = st.checkbox("➕ ضمّ تغطية الإعلام الإسرائيلي والأمريكي والبريطاني (للمقارنة)", value=True, key="in_media")
-    media_sel = []
-    if with_media:
-        media_pool = [e[0] for g, gr in (("il", ISRAEL), ("us", USA), ("uk", UK)) for e in all_entries(g, gr) if e[2] in ("en", "both")]
-        media_sel = st.multiselect("الصحف المضمومة", media_pool, default=[m for m in media_pool if m in (
-            "تايمز أوف إسرائيل", "جيروزاليم بوست", "Axios", "Al-Monitor", "BBC", "The Guardian", "Reuters",
-            "Foreign Policy", "Middle East Eye", "Ynetnews (إنجليزي)", "هآرتس (إنجليزي)")], key="in_media_sel")
-    use_ar = st.checkbox("➕ ضمّ الصحافة العربية (مصرية وخليجية) للمقارنة", value=False, key="in_ar")
-    ar_sel = []
-    if use_ar:
-        ar_pool = [e[0] for grp in ARABIC.values() for e in grp]
-        ar_sel = st.multiselect("الصحف العربية", ar_pool, default=ar_pool[:5] + ["الشرق الأوسط", "العربية", "الجزيرة"], key="in_ar_sel")
-        st.caption("تُترجم كلمات البحث تلقائياً إلى العربية. بحث اسم الكاتب لا يشمل الصحف العربية.")
-    if st.button("🛰️ ابحث / اعرض", type="primary", use_container_width=True, key="go_in"):
-        tl = [t.strip() for t in TERM_SPLIT.split(terms_txt) if t.strip()]
-        if qmode.startswith("🔎") and not tl:
-            st.warning("اكتب كلمات البحث أو اختر «اعرض كل ما نُشر».")
-        elif not picked:
-            st.warning("اختر مؤسسة واحدة على الأقل.")
+if _on("intel", "in"):
+    with tab_in:
+        st.caption("مكتب استخبارات مفتوح المصدر للشرق الأوسط والقرن الأفريقي: تصفّح مؤسسة واحدة أو عدة مؤسسات أو كلها، وأضف التحركات المصرية لأي ملف، "
+                   "وقارن المنظورات في جدول ربط، ثم اصنع تقريراً. التصنيف تقديري من العنوان والرابط ولا يُغني عن مراجعة المصدر.")
+        all_files = list(intel.FILES.keys())
+        if st.checkbox("اختر كل الملفات دفعة واحدة", value=False, key="in_allfiles"):
+            fnames = all_files
         else:
-            intel_run(fname, tl, days_n, picked, with_media, media_sel, ar_sel)
-
-    allr = st.session_state.get("res_in_all")
-    if allr:
-        items = allr["items"]
-        c1_, c2_ = st.columns(2)
-        f_type = c1_.multiselect("نوع المعلومة", intel.INTEL_TYPES, default=intel.INTEL_TYPES, key="in_ftype")
-        f_side = c2_.multiselect("المنظور", list(intel.SIDES.values()), default=list(intel.SIDES.values()), key="in_fside")
-        only_eg = st.checkbox("🇪🇬 اعرض ما يخص مصر فقط", value=False, key="in_onlyeg")
-        view = [a for a in items if a.get("ctype") in f_type and intel.SIDES.get(a.get("side"), "") in f_side and (a.get("egypt") or not only_eg)]
-        st.caption(f"{len(view)} نتيجة من {len(items)}")
-        with st.expander("🔗 خريطة الربط: المنظورات × أنواع المعلومة، وما يخص مصر"):
-            intel_matrix(view)
-        st.session_state["res_in"] = {**allr, "items": sorted(view, key=lambda a: a.get("seendate", ""), reverse=True)}
-        m = allr["meta"]
-        rep = intel.build_report(f"تقرير: {m['file']}", m["file"], m["terms"], m["days"], view)
-        d1_, d2_ = st.columns(2)
-        d1_.download_button("📄 نزّل التقرير التجميعي (Markdown)", rep, file_name="intel_report.md", mime="text/markdown", use_container_width=True)
-        with d2_.popover("👁️ معاينة التقرير", use_container_width=True):
-            st.markdown(rep)
-        with st.expander("🧩 أسئلة الربط: كيف يتقاطع هذا الملف مع غيره؟"):
-            st.markdown("لكل خبر أو تقرير مهم اسأل:\n" + "\n".join(f"- {q}" for q in intel.LINK_QUESTIONS))
-            st.caption("تلميح: غيّر «الملف» أعلاه وأعد البحث بنفس الأطراف لترى كيف يتقاطع البحر الأحمر مع القرن الأفريقي والخليج.")
-        render_results("in")
-
-    with st.expander("🔎 العثور على التقارير المجانية (PDF ومستودعات الأبحاث)"):
-        q_free = st.text_input("عنوان التقرير أو موضوعه", key="in_free", placeholder="Egypt military assessment")
-        if q_free.strip():
-            for lbl_, u_ in intel.search_links(q_free):
-                st.markdown(f"- [{lbl_}]({u_})")
-            st.caption("ابحث عن النسخ المنشورة بإذن أصحابها أو الملخصات العلنية، أو اطلب نسخة من المؤلف.")
+            fnames = st.multiselect("الملفات (اختر ملفاً أو أكثر، وسيُبحث فيها كلها معاً)", all_files, default=all_files[:1], key="in_files")
+        if not fnames:
+            st.warning("اختر ملفاً واحداً على الأقل.")
+            fnames = all_files[:1]
+        fname = " + ".join(fnames)
+        fmeta = {"terms": list(dict.fromkeys(t for f in fnames for t in intel.FILES[f]["terms"])),
+                 "egypt": list(dict.fromkeys(t for f in fnames for t in intel.FILES[f]["egypt"])),
+                 "axes": "؛ ".join(intel.FILES[f]["axes"] for f in fnames)}
+        st.markdown(f"**المحاور:** {fmeta['axes']}")
+        egm = st.radio("التحركات المصرية", ["الملف + التحركات المصرية", "الملف فقط", "التحركات المصرية فقط"], horizontal=True, key="in_eg")
+        base_terms = fmeta["terms"] if egm != "التحركات المصرية فقط" else []
+        eg_terms = fmeta["egypt"] if egm != "الملف فقط" else []
+        qmode = st.radio("طريقة العرض", ["🔎 بحث بكلمات الملف", "📰 اعرض كل ما نُشر (بدون كلمات)"], horizontal=True, key="in_qmode")
+        terms_txt = ""
+        if qmode.startswith("🔎"):
+            terms_txt = st.text_input("كلمات البحث (يمكن تعديلها؛ بالإنجليزية أو العربية، بفاصلة)", value="، ".join(base_terms + eg_terms),
+                                      key=f"in_terms_{fname}_{egm}")
+            if len(fnames) > 1:
+                st.caption(f"سيُبحث في {len(fnames)} ملفات معاً بكلماتها مجتمعة؛ قصّ الكلمات إن كانت كثيرة.")
+        names = [x[0] for x in intel.SOURCES]
+        side_list = [v for k, v in intel.SIDES.items() if k != "uk"]
+        side_codes = {v: k for k, v in intel.SIDES.items()}
+        scope_i = st.radio("المؤسسات", ["مؤسسة واحدة", "عدة مؤسسات", "كل المؤسسات"], horizontal=True, key="in_scope", index=1)
+        if scope_i == "مؤسسة واحدة":
+            picked = [st.selectbox("المؤسسة", names, key="in_one")]
+        elif scope_i == "كل المؤسسات":
+            picked = names
         else:
-            st.caption("اكتب موضوعاً لتظهر روابط البحث الجاهزة.")
-    with st.expander("📚 دليل المؤسسات"):
-        for sd_code, sd_name in intel.SIDES.items():
-            rows = [x for x in intel.SOURCES if x[2] == sd_code]
-            if rows:
-                st.markdown(f"**{sd_name}**")
-                st.markdown("\n".join(f"- [{n}](https://{d}) — {f}" for n, d, _s, _k, f in rows))
-        st.markdown("- [SIPRI — قاعدة صفقات السلاح (تصدير CSV)](https://armstransfers.sipri.org/ArmsTransfer/TransferRegister)")
-        st.caption("الدومينات كتبتُها من معرفتي ولم أجرّبها كلها؛ إن لم يظهر مصدر في البحث فتحقق من دومينه.")
+            sides_pick = st.multiselect("المنظورات", side_list, default=side_list, key="in_sides")
+            default_src = [x[0] for x in intel.SOURCES if intel.SIDES[x[2]] in sides_pick]
+            picked = st.multiselect("المؤسسات", names, default=default_src, key=f"in_src_{'_'.join(sorted(side_codes[x] for x in sides_pick))}")
+        days_i = st.selectbox("الفترة", ["آخر 7 أيام", "آخر 14 يوماً", "آخر 30 يوماً", "آخر 90 يوماً"], index=1, key="in_days")
+        days_n = int(re.findall(r"\d+", days_i)[0])
+        with_media = st.checkbox("➕ ضمّ تغطية الإعلام الإسرائيلي والأمريكي والبريطاني (للمقارنة)", value=True, key="in_media")
+        media_sel = []
+        if with_media:
+            media_pool = [e[0] for g, gr in (("il", ISRAEL), ("us", USA), ("uk", UK)) for e in all_entries(g, gr) if e[2] in ("en", "both")]
+            media_sel = st.multiselect("الصحف المضمومة", media_pool, default=[m for m in media_pool if m in (
+                "تايمز أوف إسرائيل", "جيروزاليم بوست", "Axios", "Al-Monitor", "BBC", "The Guardian", "Reuters",
+                "Foreign Policy", "Middle East Eye", "Ynetnews (إنجليزي)", "هآرتس (إنجليزي)")], key="in_media_sel")
+        use_ar = st.checkbox("➕ ضمّ الصحافة العربية (مصرية وخليجية) للمقارنة", value=False, key="in_ar")
+        ar_sel = []
+        if use_ar:
+            ar_pool = [e[0] for grp in ARABIC.values() for e in grp]
+            ar_sel = st.multiselect("الصحف العربية", ar_pool, default=ar_pool[:5] + ["الشرق الأوسط", "العربية", "الجزيرة"], key="in_ar_sel")
+            st.caption("تُترجم كلمات البحث تلقائياً إلى العربية. بحث اسم الكاتب لا يشمل الصحف العربية.")
+        if st.button("🛰️ ابحث / اعرض", type="primary", use_container_width=True, key="go_in"):
+            tl = [t.strip() for t in TERM_SPLIT.split(terms_txt) if t.strip()]
+            if qmode.startswith("🔎") and not tl:
+                st.warning("اكتب كلمات البحث أو اختر «اعرض كل ما نُشر».")
+            elif not picked:
+                st.warning("اختر مؤسسة واحدة على الأقل.")
+            else:
+                intel_run(fname, tl, days_n, picked, with_media, media_sel, ar_sel)
 
-with tab_gd:
-    use_filters("gd", "full")
-    st.caption("بحث واسع في كل ما يرصده GDELT حسب بلد المصدر، دون تحديد مواقع بعينها.")
-    scope = st.selectbox("المصادر", list(core.GLOBAL_SCOPES.keys()), key="gd_scope")
-    if st.button("ابحث (GDELT عام)", type="primary", use_container_width=True, key="go_gd"):
-        do_search("gd", core.GLOBAL_SCOPES[scope])
-    render_results("gd")
+        allr = st.session_state.get("res_in_all")
+        if allr:
+            items = allr["items"]
+            c1_, c2_ = st.columns(2)
+            f_type = c1_.multiselect("نوع المعلومة", intel.INTEL_TYPES, default=intel.INTEL_TYPES, key="in_ftype")
+            f_side = c2_.multiselect("المنظور", list(intel.SIDES.values()), default=list(intel.SIDES.values()), key="in_fside")
+            only_eg = st.checkbox("🇪🇬 اعرض ما يخص مصر فقط", value=False, key="in_onlyeg")
+            view = [a for a in items if a.get("ctype") in f_type and intel.SIDES.get(a.get("side"), "") in f_side and (a.get("egypt") or not only_eg)]
+            st.caption(f"{len(view)} نتيجة من {len(items)}")
+            with st.expander("🔗 خريطة الربط: المنظورات × أنواع المعلومة، وما يخص مصر"):
+                intel_matrix(view)
+            st.session_state["res_in"] = {**allr, "items": sorted(view, key=lambda a: a.get("seendate", ""), reverse=True)}
+            m = allr["meta"]
+            rep = intel.build_report(f"تقرير: {m['file']}", m["file"], m["terms"], m["days"], view)
+            d1_, d2_ = st.columns(2)
+            d1_.download_button("📄 نزّل التقرير التجميعي (Markdown)", rep, file_name="intel_report.md", mime="text/markdown", use_container_width=True)
+            with d2_.popover("👁️ معاينة التقرير", use_container_width=True):
+                st.markdown(rep)
+            with st.expander("🧩 أسئلة الربط: كيف يتقاطع هذا الملف مع غيره؟"):
+                st.markdown("لكل خبر أو تقرير مهم اسأل:\n" + "\n".join(f"- {q}" for q in intel.LINK_QUESTIONS))
+                st.caption("تلميح: غيّر «الملف» أعلاه وأعد البحث بنفس الأطراف لترى كيف يتقاطع البحر الأحمر مع القرن الأفريقي والخليج.")
+            render_results("in")
+
+        with st.expander("🔎 العثور على التقارير المجانية (PDF ومستودعات الأبحاث)"):
+            q_free = st.text_input("عنوان التقرير أو موضوعه", key="in_free", placeholder="Egypt military assessment")
+            if q_free.strip():
+                for lbl_, u_ in intel.search_links(q_free):
+                    st.markdown(f"- [{lbl_}]({u_})")
+                st.caption("ابحث عن النسخ المنشورة بإذن أصحابها أو الملخصات العلنية، أو اطلب نسخة من المؤلف.")
+            else:
+                st.caption("اكتب موضوعاً لتظهر روابط البحث الجاهزة.")
+        with st.expander("📚 دليل المؤسسات"):
+            for sd_code, sd_name in intel.SIDES.items():
+                rows = [x for x in intel.SOURCES if x[2] == sd_code]
+                if rows:
+                    st.markdown(f"**{sd_name}**")
+                    st.markdown("\n".join(f"- [{n}](https://{d}) — {f}" for n, d, _s, _k, f in rows))
+            st.markdown("- [SIPRI — قاعدة صفقات السلاح (تصدير CSV)](https://armstransfers.sipri.org/ArmsTransfer/TransferRegister)")
+            st.caption("الدومينات كتبتُها من معرفتي ولم أجرّبها كلها؛ إن لم يظهر مصدر في البحث فتحقق من دومينه.")
+
+if _on("search", "gd"):
+    with tab_gd:
+        use_filters("gd", "full")
+        st.caption("بحث واسع في كل ما يرصده GDELT حسب بلد المصدر، دون تحديد مواقع بعينها.")
+        scope = st.selectbox("المصادر", list(core.GLOBAL_SCOPES.keys()), key="gd_scope")
+        if st.button("ابحث (GDELT عام)", type="primary", use_container_width=True, key="go_gd"):
+            do_search("gd", core.GLOBAL_SCOPES[scope])
+        render_results("gd")
 
 COUNTRIES = {"كل الدول": None, "الولايات المتحدة": "US", "بريطانيا": "UK", "إسرائيل": "IS", "البرازيل": "BR", "البرتغال": "PO", "فرنسا": "FR", "إسبانيا": "SP"}
 
-with tab_ml:
-    query = ""
-    st.caption(
-        "ترجم كلماتك إلى عدة لغات، **عدّل أي ترجمة بيدك أو اكتبها بنفسك**، ثم ابحث بها. "
-        "كل لغة تُبحث في المقالات المنشورة بها. التركية والفارسية والأمهرية تعرض ما تقوله تلك الدول بلسانها؛ تغطية GDELT لها أضعف، فإن لم تظهر نتائج فوسّع الفترة."
-    )
-    src_txt = st.text_input(
-        "العبارة بالعربية", key="ml_src",
-        help="افصل بين المواضيع بفاصلة.",
-    )
-    base_terms = [x.strip() for x in TERM_SPLIT.split(src_txt or query) if x.strip()]
-    if st.button("🔤 ترجم إلى اللغات المختارة", use_container_width=True, key="ml_tr"):
-        if not base_terms:
-            st.warning("اكتب كلمة أو جملة بالعربية أولاً.")
-        else:
-            with st.spinner("جارٍ الترجمة…"):
-                for code, _, _, _ in core.LANGS:
-                    if st.session_state.get(f"ml_use_{code}", dict((c, d) for c, _, _, d in core.LANGS)[code]):
-                        out, ok = core.translate_terms(base_terms, code)
-                        st.session_state[f"ml_txt_{code}"] = "، ".join(out) if ok else ""
-                        st.session_state[f"ml_fail_{code}"] = not ok
-    chosen = []
-    for code, name, gl, default in core.LANGS:
-        c1_, c2_ = st.columns([1, 3])
-        use = c1_.checkbox(name, value=default, key=f"ml_use_{code}")
-        txt = c2_.text_input(f"الترجمة إلى {name}", key=f"ml_txt_{code}", label_visibility="collapsed",
-                             placeholder=f"اكتب أو عدّل الترجمة ({name})")
-        if st.session_state.get(f"ml_fail_{code}"):
-            c2_.caption("⚠️ فشلت الترجمة الآلية — اكتبها بنفسك.")
-        if use and txt.strip():
-            chosen.append((code, gl, [x.strip() for x in TERM_SPLIT.split(txt) if x.strip()]))
-    country_label = st.selectbox("حصر في مصادر بلد معيّن (اختياري)", list(COUNTRIES.keys()), key="ml_country")
-    if st.button("ابحث بهذه الترجمات", type="primary", use_container_width=True, key="go_ml"):
-        cc = COUNTRIES[country_label]
-        jobs = [
-            {"code": code, "extra": f"sourcelang:{gl}" + (f" sourcecountry:{cc}" if cc else ""), "terms": terms_}
-            for code, gl, terms_ in chosen
-        ]
-        if not jobs:
-            st.warning("اختر لغة واحدة على الأقل واكتب ترجمتها (اضغط «ترجم» أولاً).")
-        else:
-            do_search("ml", jobs, None, terms=base_terms or ["x"], pre=True)
-    render_results("ml")
+if _on("search", "ml"):
+    with tab_ml:
+        query = ""
+        st.caption(
+            "ترجم كلماتك إلى عدة لغات، **عدّل أي ترجمة بيدك أو اكتبها بنفسك**، ثم ابحث بها. "
+            "كل لغة تُبحث في المقالات المنشورة بها. التركية والفارسية والأمهرية تعرض ما تقوله تلك الدول بلسانها؛ تغطية GDELT لها أضعف، فإن لم تظهر نتائج فوسّع الفترة."
+        )
+        src_txt = st.text_input(
+            "العبارة بالعربية", key="ml_src",
+            help="افصل بين المواضيع بفاصلة.",
+        )
+        base_terms = [x.strip() for x in TERM_SPLIT.split(src_txt or query) if x.strip()]
+        if st.button("🔤 ترجم إلى اللغات المختارة", use_container_width=True, key="ml_tr"):
+            if not base_terms:
+                st.warning("اكتب كلمة أو جملة بالعربية أولاً.")
+            else:
+                with st.spinner("جارٍ الترجمة…"):
+                    for code, _, _, _ in core.LANGS:
+                        if st.session_state.get(f"ml_use_{code}", dict((c, d) for c, _, _, d in core.LANGS)[code]):
+                            out, ok = core.translate_terms(base_terms, code)
+                            st.session_state[f"ml_txt_{code}"] = "، ".join(out) if ok else ""
+                            st.session_state[f"ml_fail_{code}"] = not ok
+        chosen = []
+        for code, name, gl, default in core.LANGS:
+            c1_, c2_ = st.columns([1, 3])
+            use = c1_.checkbox(name, value=default, key=f"ml_use_{code}")
+            txt = c2_.text_input(f"الترجمة إلى {name}", key=f"ml_txt_{code}", label_visibility="collapsed",
+                                 placeholder=f"اكتب أو عدّل الترجمة ({name})")
+            if st.session_state.get(f"ml_fail_{code}"):
+                c2_.caption("⚠️ فشلت الترجمة الآلية — اكتبها بنفسك.")
+            if use and txt.strip():
+                chosen.append((code, gl, [x.strip() for x in TERM_SPLIT.split(txt) if x.strip()]))
+        country_label = st.selectbox("حصر في مصادر بلد معيّن (اختياري)", list(COUNTRIES.keys()), key="ml_country")
+        if st.button("ابحث بهذه الترجمات", type="primary", use_container_width=True, key="go_ml"):
+            cc = COUNTRIES[country_label]
+            jobs = [
+                {"code": code, "extra": f"sourcelang:{gl}" + (f" sourcecountry:{cc}" if cc else ""), "terms": terms_}
+                for code, gl, terms_ in chosen
+            ]
+            if not jobs:
+                st.warning("اختر لغة واحدة على الأقل واكتب ترجمتها (اضغط «ترجم» أولاً).")
+            else:
+                do_search("ml", jobs, None, terms=base_terms or ["x"], pre=True)
+        render_results("ml")
 
 
 
@@ -2736,20 +2871,21 @@ def writers_panel(pfx, gcodes, btn_label, codes):
     render_results(pfx)
 
 
-with tab_wr:
-    use_filters("wr", "kw")
-    st.caption(
-        "أحدث مقالات الرأي والتحليل لكتّاب ومراسلين مهتمين بالشرق الأوسط، بعناوين مترجمة، وزر «ترجم المقال» لقراءة النص مترجماً. "
-        "النتائج تُحفظ نصف ساعة، فالفتح المتكرر سريع."
-    )
-    sub_f, sub_a = st.tabs(["🌐 الكتّاب الأجانب", "🇸🇦 الكتّاب العرب (تويتر وغيره)"])
-    with sub_f:
-        writers_panel("wr", ["US", "UK", "IL"], "اعرض أحدث مقالات الكتّاب الأجانب", ["en", "iw"])
-        st.caption("ℹ️ مواقع مثل نيويورك تايمز وواشنطن بوست وفاينانشال تايمز وهآرتس مدفوعة: يظهر عنوانها مترجماً، وقد يتعذّر عرض نصها الكامل.")
-    with sub_a:
-        st.caption("هنا الكتّاب العرب اللي ضفتهم (سعوديون وخليجيون ومصريون وغيرهم): آخر تغريداتهم ومقالاتهم باسمهم. "
-                   "الإضافة من تاب «مصادري» ← «إضافة ككاتب». تويتر بيحجب الأدوات الآلية، فممكن التغريدات تتأخر أو متظهرش في بعض الأوقات.")
-        writers_panel("wa", ["SA", "GCC", "EG", "AR"], "🐦 اعرض أحدث ما كتبه الكتّاب العرب", ["ar"])
+if _on("intel", "wr"):
+    with tab_wr:
+        use_filters("wr", "kw")
+        st.caption(
+            "أحدث مقالات الرأي والتحليل لكتّاب ومراسلين مهتمين بالشرق الأوسط، بعناوين مترجمة، وزر «ترجم المقال» لقراءة النص مترجماً. "
+            "النتائج تُحفظ نصف ساعة، فالفتح المتكرر سريع."
+        )
+        sub_f, sub_a = st.tabs(["🌐 الكتّاب الأجانب", "🇸🇦 الكتّاب العرب (تويتر وغيره)"])
+        with sub_f:
+            writers_panel("wr", ["US", "UK", "IL"], "اعرض أحدث مقالات الكتّاب الأجانب", ["en", "iw"])
+            st.caption("ℹ️ مواقع مثل نيويورك تايمز وواشنطن بوست وفاينانشال تايمز وهآرتس مدفوعة: يظهر عنوانها مترجماً، وقد يتعذّر عرض نصها الكامل.")
+        with sub_a:
+            st.caption("هنا الكتّاب العرب اللي ضفتهم (سعوديون وخليجيون ومصريون وغيرهم): آخر تغريداتهم ومقالاتهم باسمهم. "
+                       "الإضافة من تاب «مصادري» ← «إضافة ككاتب». تويتر بيحجب الأدوات الآلية، فممكن التغريدات تتأخر أو متظهرش في بعض الأوقات.")
+            writers_panel("wa", ["SA", "GCC", "EG", "AR"], "🐦 اعرض أحدث ما كتبه الكتّاب العرب", ["ar"])
 
 
 def render_saved():
@@ -2788,13 +2924,13 @@ def render_saved():
                 parts = []
                 for n, lab in enumerate(picked):
                     x = labels[lab]
-                    txt, _ = speech_text(x["url"], x.get("title_ar", ""), ss.get("tts_mode", TTS_MODES[0]))
+                    txt, _ = speech_text(x["url"], x.get("title_ar", ""), tts_get("tts_mode", TTS_MODES[0]))
                     num = ORDINALS[n] if n < len(ORDINALS) else str(n + 1)
                     parts.append(f"الخبر {num}. من {_ar_name(source_name(x.get('domain', '')))}، {source_country(x.get('domain', ''))}. {txt}")
                     prog.progress((n + 1) / (len(picked) + 1), text=f"جُهّز {n + 1} من {len(picked)}")
                 full = "نشرة رادار الأخبار. " + " ... ".join(parts) + " ... انتهت النشرة."
                 prog.progress(0.95, text=f"جارٍ النطق (حوالي {len(full) / 13 / 60:.0f} دقيقة صوت)…")
-                res = make_audio(full, core.VOICES[ss.get("tts_voice", list(core.VOICES)[0])], ss.get("tts_rate", 0))
+                res = make_audio(full, core.VOICES[tts_get("tts_voice", list(core.VOICES)[0])], tts_get("tts_rate", 0))
                 prog.empty()
                 if res:
                     ss["bulletin"] = res
@@ -4887,7 +5023,7 @@ def render_research_casebook():
                             st.error(str(exc))
                     price_reviewed = st.checkbox("راجعت أن الأسعار المدخلة تخص Model ID المحدد حالياً.", key=f"gemini_price_review_{billing_widget_suffix}")
 
-            max_output = st.slider("أقصى طول للإجابة (توكنز)", min_value=512, max_value=8192, value=4096, step=512, key=f"ai_max_output_{case['id']}")
+            max_output = pick(st, "أقصى طول للإجابة (توكنز)", [1024, 2048, 4096, 6144, 8192], 4096, f"ai_max_output_{case['id']}")
             task_prompt = ai_router_mod.build_task_prompt(pkg_md, task_type, task_extra)
             st.caption("البرومبت النهائي يجمع لقطة القضية والمواد والخيوط والبرومبت الأساسي مع تكليف المهمة الإضافي.")
             st.download_button("⬇️ تنزيل برومبت المحادثة الكامل", task_prompt,
@@ -5304,8 +5440,8 @@ def render_case_relationship_center(cases):
     b.metric("اقتراحات للمراجعة", len(suggested))
     c.metric("مرفوضة", len(rejected))
     controls = st.columns([3, 1])
-    threshold = controls[0].select_slider("حساسية اكتشاف التقاطعات", options=[12, 18, 25, 35, 45], value=18,
-        format_func=lambda x: {12: "مرتفعة جداً", 18: "مرتفعة", 25: "متوازنة", 35: "متحفظة", 45: "صارمة"}[x])
+    threshold = pick(controls[0], "حساسية اكتشاف التقاطعات", [12, 18, 25, 35, 45], 18, "case_link_threshold",
+        fmt=lambda x: {12: "مرتفعة جداً", 18: "مرتفعة", 25: "متوازنة", 35: "متحفظة", 45: "صارمة"}[x])
     if controls[1].button("🔍 حلّل التقاطعات", type="primary", use_container_width=True, key="run_case_link_scan"):
         fresh = case_links_mod.suggest_links(cases, min_score=threshold)
         S()["case_links"] = case_links_mod.merge_suggestions(saved_links, fresh)
@@ -5462,6 +5598,7 @@ def render_early_warning_center():
     """مركز الإنذار المبكر: مقارنة تراكمية للتغيرات في ملفات القضايا."""
     st.divider()
     st.markdown("### 🚨 مركز الإنذار المبكر والتحليل الاستراتيجي")
+    auto_note("warning")
     st.caption("يقارن المواد والادعاءات والأحداث والمواقف المسجلة بخط الأساس السابق. درجات المتابعة أداة فرز وليست حكماً استخباراتياً أو إثباتاً لوقوع حدث.")
     cases = S().get("research_cases", [])
     state = S().setdefault("early_warning", {"baselines": {}, "reports": [], "last_scan": ""})
@@ -5704,93 +5841,103 @@ EG_PRESETS = {
     "⛽ خدمات وطاقة": "الكهرباء، انقطاع الكهرباء، الوقود، البنزين، المياه",
 }
 
-with tab_eg:
-    use_filters("eg", "full")
-    st.caption("أخبار الشأن الداخلي المصري من صحف ومواقع مصرية بس: جرائم وحوادث، ومجتمع، واقتصاد وأسعار، وقوانين وقرارات، والحدود، والخدمات. "
-               "اختار موضوع جاهز تحت أو اكتب كلماتك في الخانة فوق. وللشرح (القانون ده بيعمل إيه ولزمته إيه) روح تاب «🧵 الملفات والخيوط» واختار «📜 شرح للمواطن».")
-    pre = st.multiselect("🎯 مواضيع جاهزة (بتدور على كلماتها كلها)", list(EG_PRESETS), key="eg_pre")
-    if pre:
-        if query.strip():
-            st.caption("كلماتك اللي فوق هي اللي بتتستخدم (المواضيع الجاهزة بتشتغل لما الخانة تبقى فاضية).")
+if _on("search", "eg"):
+    with tab_eg:
+        use_filters("eg", "full")
+        st.caption("أخبار الشأن الداخلي المصري من صحف ومواقع مصرية بس: جرائم وحوادث، ومجتمع، واقتصاد وأسعار، وقوانين وقرارات، والحدود، والخدمات. "
+                   "اختار موضوع جاهز تحت أو اكتب كلماتك في الخانة فوق. وللشرح (القانون ده بيعمل إيه ولزمته إيه) روح تاب «🧵 الملفات والخيوط» واختار «📜 شرح للمواطن».")
+        pre = st.multiselect("🎯 مواضيع جاهزة (بتدور على كلماتها كلها)", list(EG_PRESETS), key="eg_pre")
+        if pre:
+            if query.strip():
+                st.caption("كلماتك اللي فوق هي اللي بتتستخدم (المواضيع الجاهزة بتشتغل لما الخانة تبقى فاضية).")
+            else:
+                query = "، ".join(EG_PRESETS[p] for p in pre)
+                joiner = "OR"
+                st.caption(f"هيدور على: {query}")
+        eg_view = st.radio("عايز إيه؟", ["🔎 تتبّع موضوع كامل (أسعار الطماطم، جريمة معينة…) من كل المصادر", "📰 بحث عادي في المصادر", "🧵 ملفات وخيوط الشأن المصري (منفصلة عن السياسة)"], key="eg_view")
+        if eg_view.startswith("🔎"):
+            render_topic_track("eg")
+        elif eg_view.startswith("🧵"):
+            render_dossiers("eg")
         else:
-            query = "، ".join(EG_PRESETS[p] for p in pre)
-            joiner = "OR"
-            st.caption(f"هيدور على: {query}")
-    eg_view = st.radio("عايز إيه؟", ["🔎 تتبّع موضوع كامل (أسعار الطماطم، جريمة معينة…) من كل المصادر", "📰 بحث عادي في المصادر", "🧵 ملفات وخيوط الشأن المصري (منفصلة عن السياسة)"], key="eg_view")
-    if eg_view.startswith("🔎"):
-        render_topic_track("eg")
-    elif eg_view.startswith("🧵"):
-        render_dossiers("eg")
-    else:
-        curated_tab("eg", EGYPT, "EG", "EG", "ابحث في المصادر المصرية")
+            curated_tab("eg", EGYPT, "EG", "EG", "ابحث في المصادر المصرية")
 
 
-with tab_dr:
-    if IS_ADMIN:
-        render_workflow_overview()
-        render_watch()
-        with st.expander("🔗 مزامنة إصدار المرصد إلى GitHub", expanded=False):
-            sync_repo = _sec("GH_REPO") or gh_actions.DEFAULT_REPO
-            sync_branch = _sec("GH_BRANCH") or "main"
-            sync_token = _sec("GH_SYNC_TOKEN")
-            st.caption(f"المستودع: {sync_repo} · الفرع: {sync_branch}. بعد نجاح Commit سيبدأ GitHub Actions بالتحقق، وإذا كان Streamlit Cloud مربوطاً بهذا الفرع فسيبدأ النشر تلقائياً حسب إعداداته.")
-            auto_sync_value = _sec("GH_SYNC_AUTO")
-            auto_sync = auto_sync_value is True or str(auto_sync_value).strip().lower() in ("1", "true", "yes", "on")
-            if not sync_token:
-                st.warning("للتفعيل مرة واحدة: أضف GH_SYNC_TOKEN في Streamlit Secrets بتوكن Fine-grained يملك Contents: Read and write على المستودع. أضف GH_REPO وGH_BRANCH إذا كنت تستخدم مستودعاً/فرعاً مختلفاً. لا تضع التوكن في المحادثة.")
-            elif auto_sync:
-                st.success("وضع المزامنة التلقائية مفعّل: رفع حزمة إصدار جديدة بعد فحصها ينشئ Commit تلقائياً مرة واحدة لكل ملف.")
-            release_zip = st.file_uploader("حزمة الإصدار ZIP", type=["zip"], key="github_release_zip")
-            if release_zip is not None:
-                try:
-                    release_bytes = release_zip.getvalue()
-                    release_files = github_sync_mod.inspect_release_zip(release_bytes)
-                    release_digest = hashlib.sha256(release_bytes).hexdigest()
-                    st.success(f"الحزمة سليمة: {len(release_files)} ملفاً قابلاً للمزامنة، بإجمالي {sum(len(v) for v in release_files.values()):,} بايت.")
-                    with st.expander("معاينة الملفات التي ستُرفع"):
-                        st.code("\n".join(sorted(release_files)), language="text")
-                    do_push = False
-                    if auto_sync and sync_token:
-                        do_push = st.session_state.get("github_last_sync_digest") != release_digest
-                    elif st.button("⬆️ أنشئ Commit وادفع الإصدار إلى GitHub", type="primary", disabled=not sync_token, key="push_marsad_release"):
-                        do_push = True
-                    if do_push:
-                        with st.spinner("جارٍ رفع الملفات وإنشاء Commit دون Force Push…"):
-                            pushed = github_sync_mod.push_release_zip(sync_token, sync_repo, sync_branch, release_bytes,
-                                                                      message=f"Marsad News release sync: {len(release_files)} files")
-                        st.session_state["github_last_sync_digest"] = release_digest
-                        st.success(f"تم إنشاء Commit: {pushed['commit_sha'][:12]} · {pushed['files']} ملفاً")
-                        if pushed.get("commit_url"):
-                            st.markdown(f"[فتح Commit على GitHub]({pushed['commit_url']})")
-                        st.info("تم تحديث الفرع. راقب GitHub Actions للتحقق، ثم حالة نشر Streamlit Cloud.")
-                except Exception as exc:
-                    st.error(f"الحزمة لم تجتز الفحص أو فشل الاتصال: {type(exc).__name__}: {str(exc)[:220]}")
-            st.caption("المزامنة لا تحذف ملفات من المستودع ولا تستخدم Force Push، وتستبعد الأسرار والنسخ الاحتياطية. GH_SYNC_AUTO=true يجعل الرفع التلقائي بعد رفع ZIP جديد. هذا يختصر خطوات النشر داخل التطبيق، لكنه لا يربط جلسة ChatGPT مباشرة بمستودعك؛ لذلك لا ندّعي مزامنة تعديلات هذه المحادثة قبل وصولها للمستودع.")
-    render_daily()
+if _on("ops"):
+    with tab_dr:
+        if IS_ADMIN:
+            render_workflow_overview()
+            render_auto_intel_panel()
+            render_watch()
+            with st.expander("🔗 مزامنة إصدار المرصد إلى GitHub", expanded=False):
+                sync_repo = _sec("GH_REPO") or gh_actions.DEFAULT_REPO
+                sync_branch = _sec("GH_BRANCH") or "main"
+                sync_token = _sec("GH_SYNC_TOKEN")
+                st.caption(f"المستودع: {sync_repo} · الفرع: {sync_branch}. بعد نجاح Commit سيبدأ GitHub Actions بالتحقق، وإذا كان Streamlit Cloud مربوطاً بهذا الفرع فسيبدأ النشر تلقائياً حسب إعداداته.")
+                auto_sync_value = _sec("GH_SYNC_AUTO")
+                auto_sync = auto_sync_value is True or str(auto_sync_value).strip().lower() in ("1", "true", "yes", "on")
+                if not sync_token:
+                    st.warning("للتفعيل مرة واحدة: أضف GH_SYNC_TOKEN في Streamlit Secrets بتوكن Fine-grained يملك Contents: Read and write على المستودع. أضف GH_REPO وGH_BRANCH إذا كنت تستخدم مستودعاً/فرعاً مختلفاً. لا تضع التوكن في المحادثة.")
+                elif auto_sync:
+                    st.success("وضع المزامنة التلقائية مفعّل: رفع حزمة إصدار جديدة بعد فحصها ينشئ Commit تلقائياً مرة واحدة لكل ملف.")
+                release_zip = st.file_uploader("حزمة الإصدار ZIP", type=["zip"], key="github_release_zip")
+                if release_zip is not None:
+                    try:
+                        release_bytes = release_zip.getvalue()
+                        release_files = github_sync_mod.inspect_release_zip(release_bytes)
+                        release_digest = hashlib.sha256(release_bytes).hexdigest()
+                        st.success(f"الحزمة سليمة: {len(release_files)} ملفاً قابلاً للمزامنة، بإجمالي {sum(len(v) for v in release_files.values()):,} بايت.")
+                        with st.expander("معاينة الملفات التي ستُرفع"):
+                            st.code("\n".join(sorted(release_files)), language="text")
+                        do_push = False
+                        if auto_sync and sync_token:
+                            do_push = st.session_state.get("github_last_sync_digest") != release_digest
+                        elif st.button("⬆️ أنشئ Commit وادفع الإصدار إلى GitHub", type="primary", disabled=not sync_token, key="push_marsad_release"):
+                            do_push = True
+                        if do_push:
+                            with st.spinner("جارٍ رفع الملفات وإنشاء Commit دون Force Push…"):
+                                pushed = github_sync_mod.push_release_zip(sync_token, sync_repo, sync_branch, release_bytes,
+                                                                          message=f"Marsad News release sync: {len(release_files)} files")
+                            st.session_state["github_last_sync_digest"] = release_digest
+                            st.success(f"تم إنشاء Commit: {pushed['commit_sha'][:12]} · {pushed['files']} ملفاً")
+                            if pushed.get("commit_url"):
+                                st.markdown(f"[فتح Commit على GitHub]({pushed['commit_url']})")
+                            st.info("تم تحديث الفرع. راقب GitHub Actions للتحقق، ثم حالة نشر Streamlit Cloud.")
+                    except Exception as exc:
+                        st.error(f"الحزمة لم تجتز الفحص أو فشل الاتصال: {type(exc).__name__}: {str(exc)[:220]}")
+                st.caption("المزامنة لا تحذف ملفات من المستودع ولا تستخدم Force Push، وتستبعد الأسرار والنسخ الاحتياطية. GH_SYNC_AUTO=true يجعل الرفع التلقائي بعد رفع ZIP جديد. هذا يختصر خطوات النشر داخل التطبيق، لكنه لا يربط جلسة ChatGPT مباشرة بمستودعك؛ لذلك لا ندّعي مزامنة تعديلات هذه المحادثة قبل وصولها للمستودع.")
+        render_daily()
 
-with tab_dos:
-    render_dossiers()
-    render_custom_collections("pol")
+if _on("library", "dos"):
+    with tab_dos:
+        render_dossiers()
+        render_custom_collections("pol")
 
-with tab_sv:
-    render_saved()
-with tab_lab:
-    render_analysis_lab()
+if _on("library", "sv"):
+    with tab_sv:
+        render_saved()
+if _on("library", "lab"):
+    with tab_lab:
+        render_analysis_lab()
 
-with tab_guide:
-    user_guide_mod.render(st)
+if _on("guide"):
+    with tab_guide:
+        user_guide_mod.render(st)
 
-with tab_ms:
-    with st.expander("🎧 إعدادات القراءة الصوتية (للمترو والسماعات)"):
-        tts_settings("tts")
-        st.radio("ما الذي يُقرأ عند الضغط على «🎧 استمع»؟", TTS_MODES, key="tts_mode")
-        st.caption("تُجهَّز القراءة بصوت عربي عصبي، ويمكن تنزيلها MP3 قبل نزول المترو للاستماع بلا إنترنت.")
-    if IS_ADMIN:
-        render_manage()
-        st.divider()
-        render_keys_admin()
-    else:
-        st.info("إدارة المصادر والشفرات غير متاحة في النسخة التجريبية.")
+if _on("settings"):
+    with tab_ms:
+        with st.expander("🎧 إعدادات القراءة الصوتية (للمترو والسماعات)"):
+            tts_settings("tts")
+            st.radio("ما الذي يُقرأ عند الضغط على «🎧 استمع»؟", TTS_MODES, key="tts_mode")
+            for _k in ("tts_voice", "tts_rate", "tts_mode"):
+                tts_get(_k, None)  # احفظ نسخة
+            st.caption("تُجهَّز القراءة بصوت عربي عصبي، ويمكن تنزيلها MP3 قبل نزول المترو للاستماع بلا إنترنت.")
+        if IS_ADMIN:
+            render_manage()
+            st.divider()
+            render_keys_admin()
+        else:
+            st.info("إدارة المصادر والشفرات غير متاحة في النسخة التجريبية.")
 
 save_results()
 show_footer()

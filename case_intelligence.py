@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 import hashlib
 import json
 
+import prompt_style
+
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -300,7 +302,8 @@ def build_cumulative_prompt(case, record):
 - لا تحذف استنتاجاً سابقاً بصمت؛ اذكر سبب تعديله أو تعليقه.
 - إذا كانت المادة مجرد عنوان أو ملخص، قل ذلك بوضوح.
 - لا تنفذ بحثاً أو استدعاء API أو عملية مدفوعة. هذا برومبت للتحليل اليدوي بعد مراجعة الباحث.
-"""
+
+{prompt_style.source_block()}"""
 
 
 def summarize(record):

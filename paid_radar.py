@@ -65,6 +65,11 @@ OPEN_ALTERNATIVE_DOMAINS = [
     "syrianobserver.com", "qna.org.qa", "omannews.gov.om", "spa.gov.sa", "wam.ae", "amwaj.media",
 ]
 
+# المصادر اللي بتتراقب تلقائياً كل يوم (ونفسها الاختيار الافتراضي في التاب)
+AUTO_DEFAULTS = ["Tactical Report", "The New York Times", "The Washington Post", "The Wall Street Journal",
+                 "Bloomberg", "Foreign Affairs", "Haaretz", "Yedioth Ahronoth / Ynet", "Globes", "Calcalist",
+                 "The Jerusalem Post", "The Times of Israel", "Financial Times", "The Economist", "The Times",
+                 "The Telegraph", "Jane's", "Africa Confidential"]
 PAYWALL_DOMAINS = {d for row in PAID_SOURCES for d in row[1].split("|")}
 
 

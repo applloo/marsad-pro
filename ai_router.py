@@ -2,6 +2,8 @@
 """اقتراحات Auto AI Router وحزم مهام قابلة للمراجعة. لا ينفذ أي إرسال."""
 from __future__ import annotations
 
+import prompt_style
+
 TASKS = {
     "استخراج المعلومات من الأخبار": {
         "goal": "استخراج الوقائع والأسماء والتواريخ والأماكن والأرقام والاقتباسات والادعاءات من كل مادة بصورة منظمة.",
@@ -43,6 +45,10 @@ def build_task_prompt(base_package: str, task: str, extra_instructions: str = ""
              "- افصل الوقائع عن الادعاءات والتحليل والسيناريوهات.\n"
              "- اذكر ما لا تستطيع إنجازه بسبب نقص البيانات بدلاً من ملء الفراغ بالتخمين.\n"
              "- نفّذ جميع عناصر المخرج، ولا تكتفِ بشرح ما ينبغي فعله."]
+    if task == "كتابة سكريبت باللهجة المصرية":
+        parts.append(prompt_style.script_rules())
+    elif task != "إنتاج المحتوى":
+        parts.append(prompt_style.source_block())
     if extra_instructions.strip():
         parts.append("## تعليمات إضافية من المستخدم\n" + extra_instructions.strip())
     return "\n\n".join(parts)

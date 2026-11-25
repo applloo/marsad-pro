@@ -6,6 +6,8 @@ This module organizes recorded material. It does not determine which account is 
 from __future__ import annotations
 import hashlib
 import json
+
+import prompt_style
 import re
 from urllib.parse import urlparse
 
@@ -119,6 +121,7 @@ def build_comparison_prompt(case, report):
 8. لا تستنتج النوايا ولا تملأ الفراغات بالتخمين. إذا كان النص مقتطفاً أو غير متاح فاذكر ذلك.
 9. اختم بما يمكن قوله بثقة، وما يظل مفتوحاً، وأهم ثلاثة أسئلة بحثية.
 
+{prompt_style.source_block()}
 بيانات المقارنة:
 {payload}
 
