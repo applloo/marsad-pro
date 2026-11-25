@@ -128,7 +128,7 @@ def src_label(domain, with_domain=True):
         return html.escape(str(domain or "")) + f" (تعذّر تحديد الدولة: {type(e).__name__})"
 
 
-APP_VERSION = "9.6"  # بيزيد مع كل نسخة جديدة
+APP_VERSION = "9.9"  # بيزيد مع كل نسخة جديدة
 st.set_page_config(page_title="Marsad | مركز الرصد والتحليل", page_icon="🔷", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown(
@@ -1012,6 +1012,8 @@ def dispatch_tracked(workflow, label, dispatch_fn, *args):
         return False, "لم يتم إرسال المهمة لأن حفظ سجل التشغيل تعذّر. راجع رسالة التخزين ثم أعد المحاولة."
     try:
         ok, message = dispatch_fn(*args)
+        if ok:
+            _kick(workflow)
         target = "submitted" if ok else "failed"
         job_control_mod.transition(task, target, message)
         S()["job_tasks"] = job_control_mod.append_event(S()["job_tasks"], task)
@@ -1217,7 +1219,8 @@ def render_run_report():
         if c2.button("🔁 حدّث الحالة", key="run_status", use_container_width=True):
             st.rerun()
         if busy:
-            st.caption("هناك تشغيل جارٍ، لذلك الزر معطّل حتى ينتهي. اضغط «حدّث الحالة» بين فترة وأخرى، ثم أعد تحميل الصفحة ليظهر التقرير الجديد.")
+            st.caption("في تشغيل شغال دلوقتي، فالزرار مقفول لحد ما يخلص. المتابعة تحت بتتحدّث لوحدها.")
+        render_live_run("daily.yml", "daily")
 
 
 def render_workflow_overview():
@@ -1421,12 +1424,234 @@ def auto_note(kind):
         st.caption("🤖 القسم ده بيتحدّث لوحده كل يوم بعد البحث الشامل (من «غرفة العمليات» ← تحديث الأقسام الذكية). لسه ماتعملش تحديث تلقائي.")
 
 
+ALERTS_CFG, ALERTS_OUT = "marsad_alerts_cfg.json", "marsad_alerts.json"
+
+
+def render_alerts_settings():
+    """إعدادات إشعارات تطبيق الموبايل والكمبيوتر: الكلمات وأنواع الإشعارات، ورابط الإشعارات اللي بتحطه في التطبيق"""
+    with st.expander("🔔 إشعارات تطبيق الموبايل والكمبيوتر", expanded=False):
+        if not (GH_TOKEN and GH_GIST):
+            st.info("محتاج التخزين الدائم (GITHUB_TOKEN وGIST_ID).")
+            return
+        ss = st.session_state
+        if "alerts_cfg" not in ss:
+            try:
+                ss["alerts_cfg"] = store.load_file(GH_TOKEN, GH_GIST, ALERTS_CFG, {}) or {}
+            except Exception:
+                ss["alerts_cfg"] = {}
+        cfg = ss["alerts_cfg"]
+        st.caption("GitHub بيدوّر على كلماتك كل ساعة ونص تقريباً، والتطبيق بيبص كل ربع ساعة ويطلعلك الإشعار. "
+                   "والتحكم في الصوت وساعات الهدوء من جوه التطبيق نفسه.")
+        kw = st.text_area("🔑 كلماتك (أي خبر في المصادر فيه كلمة منهم يطلعلك إشعار) — بفاصلة، عربي وإنجليزي",
+                          value=cfg.get("keywords", ""), height=90, key="al_kw",
+                          placeholder="سد النهضة، GERD، رفح، Rafah، ليبيا، Libya، حفتر، Haftar")
+        ekw = st.text_area("🇪🇬 كلمات الشأن المصري (بيدوّر في المصادر المصرية بس)", value=cfg.get("egypt_keywords", ""), height=70, key="al_ekw",
+                           placeholder="أسعار الدولار، البنزين، قانون جديد")
+        cats0 = cfg.get("cats") or {}
+        names = {"keyword": "خبر فيه كلمة من كلماتك", "egypt": "الشأن المصري", "warning": "تنبيهات الإنذار المبكر في ملفاتك",
+                 "daily": "التقرير اليومي جاهز", "job": "البحث الشامل خلص أو فيه مشكلة"}
+        cols = st.columns(2)
+        cats = {k: cols[i % 2].checkbox(v, value=cats0.get(k, True), key=f"al_cat_{k}") for i, (k, v) in enumerate(names.items())}
+        mx = pick(st, "أقصى عدد إشعارات أخبار في المرة الواحدة", [3, 5, 8, 12], int(cfg.get("max_per_run") or 8), "al_max")
+        c1, c2 = st.columns(2)
+        if c1.button("💾 احفظ إعدادات الإشعارات", type="primary", use_container_width=True, key="al_save"):
+            new = {"keywords": kw.strip(), "egypt_keywords": ekw.strip(), "cats": cats, "max_per_run": mx}
+            try:
+                store.save_file(GH_TOKEN, GH_GIST, ALERTS_CFG, new)
+                ss["alerts_cfg"] = new
+                st.success("✅ اتحفظت. أول إشعارات هتوصل في التشغيلة الجاية (خلال ساعة ونص بالكتير).")
+            except Exception as ex:
+                st.error(f"ما اتحفظتش ({type(ex).__name__}).")
+        if c2.button("🧪 ابعت إشعار تجربة دلوقتي", use_container_width=True, key="al_test"):
+            try:
+                cur = store.load_file(GH_TOKEN, GH_GIST, ALERTS_OUT, {}) or {}
+                now_ = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                cur["items"] = [{"id": "test_" + hashlib.sha1(now_.encode()).hexdigest()[:10], "cat": "job", "title": "🧪 إشعار تجربة من المرصد",
+                                 "body": "لو شايف ده على الموبايل أو الكمبيوتر، يبقى الإشعارات شغالة.", "url": "", "section": "home",
+                                 "at": now_}] + (cur.get("items") or [])[:149]
+                cur["updated"] = now_
+                store.save_file(GH_TOKEN, GH_GIST, ALERTS_OUT, cur)
+                st.success("✅ اتبعت. في التطبيق دوس «🔄 افحص دلوقتي» في شاشة الإشعارات، وهيطلع خلال دقيقة أو 5 (GitHub بيأخّر الملف شوية).")
+            except Exception as ex:
+                st.error(f"ما اتبعتش ({type(ex).__name__}).")
+        if "gist_owner" not in ss:
+            try:
+                import requests as _rq
+                ss["gist_owner"] = (_rq.get("https://api.github.com/gists/" + GH_GIST, timeout=15,
+                                            headers={"Authorization": f"Bearer {GH_TOKEN}", "User-Agent": "marsad"}).json().get("owner") or {}).get("login", "")
+            except Exception:
+                ss["gist_owner"] = ""
+        owner = ss.get("gist_owner") or "applloo"
+        st.markdown("**📲 بيانات ربط التطبيق** (بتتكتب مرة واحدة في إعدادات التطبيق):")
+        st.markdown("رابط الإشعارات:")
+        st.code(f"https://gist.githubusercontent.com/{owner}/{GH_GIST}/raw/{ALERTS_OUT}", language=None)
+        st.caption("الرابط ده بيقرا ملف الإشعارات بس، مش بياناتك ولا محفوظاتك. ماتنشروش برضه.")
+
+
+_BUSY = ("queued", "in_progress", "waiting", "requested", "pending")
+_STEP_SKIP = ("Set up job", "Complete job", "Run actions/", "Post Run", "Run pip install")
+
+
+def _kick(wf):
+    """بنفتكر إنك لسه دايس تشغيل، عشان نبدأ نتابع حتى قبل ما GitHub يعمل التشغيل (بياخد ثواني)"""
+    st.session_state[f"_kick_{wf}"] = time.time()
+    st.session_state.pop(f"_live_lr_{wf}", None)
+
+
+def _live_lr(wf, max_age=15):
+    ss, tok = st.session_state, _sec("ACTIONS_TOKEN")
+    t0, lr = ss.get(f"_live_lr_{wf}", (0, None))
+    if tok and time.time() - t0 > max_age:
+        try:
+            lr = gh_actions.last_run(tok, _sec("GH_REPO") or gh_actions.DEFAULT_REPO, wf)
+        except Exception:
+            lr = None
+        ss[f"_live_lr_{wf}"] = (time.time(), lr)
+    return lr
+
+
+def _run_is_new(lr, wf):
+    """التشغيل ده هو اللي انت لسه دايسه؟ (مش تشغيل قديم)"""
+    kick = st.session_state.get(f"_kick_{wf}", 0)
+    made = keys_mod.parse((lr or {}).get("created") or "")
+    return bool(made and made.timestamp() >= kick - 60)
+
+
+def render_live_run(wf, key):
+    """زرار يفتح المهمة على GitHub، ولو شغالة: لوحة بتتحدّث لوحدها فيها الخطوات والعناوين اللي وصلت أول بأول"""
+    tok = _sec("ACTIONS_TOKEN")
+    if not tok:
+        return
+    repo, ss = _sec("GH_REPO") or gh_actions.DEFAULT_REPO, st.session_state
+    lr = _live_lr(wf, 45)
+    busy = bool(lr and lr.get("status") in _BUSY)
+    kicked = time.time() - ss.get(f"_kick_{wf}", 0) < 240
+    # آخر تشغيل على طول، ولو لسه دايس والتشغيل الجديد ماظهرش: صفحة المهمة كلها
+    fresh = lr and not (kicked and not _run_is_new(lr, wf))
+    url = (lr or {}).get("url") if fresh else gh_actions.workflow_page(repo, wf)
+    st.link_button("🔗 افتحها على GitHub (تشوف شغالة ولا لأ)", url or gh_actions.workflow_page(repo, wf), use_container_width=True)
+    if busy or kicked:
+        _live_panel(wf, key)
+
+
+def _fragment_every(sec):
+    f = getattr(st, "fragment", None)
+    if f is None:
+        return lambda fn: fn
+    try:
+        return f(run_every=sec)
+    except TypeError:
+        return f
+
+
+@_fragment_every(20)
+def _live_panel(wf, key):
+    ss, tok = st.session_state, _sec("ACTIONS_TOKEN")
+    repo = _sec("GH_REPO") or gh_actions.DEFAULT_REPO
+    lr = _live_lr(wf, 15)
+    kicked = time.time() - ss.get(f"_kick_{wf}", 0) < 240
+    with st.container(border=True):
+        st.markdown("##### 📡 متابعة مباشرة")
+        if not lr or (kicked and not _run_is_new(lr, wf)):
+            st.info("⏳ GitHub بيجهّز التشغيل (بياخد من 10 ثواني لدقيقة)…")
+            st.caption(f"بيتحدّث لوحده كل 20 ثانية · {datetime.now(core.TZ).strftime('%H:%M:%S')}")
+            return
+        busy = lr.get("status") in _BUSY
+        # الخطوات
+        try:
+            steps = gh_actions.run_steps(tok, repo, lr.get("id")) if lr.get("id") else []
+        except Exception:
+            steps = []
+        for s_ in steps:
+            if any(s_["name"].startswith(x) for x in _STEP_SKIP):
+                continue
+            if s_["status"] == "completed":
+                ico = {"success": "✅", "failure": "❌", "skipped": "⏭️", "cancelled": "⚪"}.get(s_.get("conclusion") or "", "✔️")
+            elif s_["status"] == "in_progress":
+                ico = "⏳"
+            else:
+                ico = "🕒"
+            name = s_["name"].replace("Run python ", "تشغيل ")
+            st.markdown(f"{ico} {name}" + (" — **شغالة دلوقتي**" if s_["status"] == "in_progress" else ""))
+        if not steps:
+            st.caption("⏳ شغال… (الخطوات بتظهر أول ما GitHub يبدأ)")
+        # البحث الشامل: العناوين اللي وصلت بتتحمّل في التابات أول بأول
+        if wf in ("all.yml", "search.yml") and PERSIST:
+            _live_search(key, lr)
+        if not busy:
+            ok = lr.get("conclusion") == "success"
+            (st.success if ok else st.warning)("✅ خلص التشغيل كله." if ok else "⚠️ التشغيل خلص بس فيه خطوة وقعت — افتح GitHub من الزرار اللي فوق وشوفها.")
+            if not ss.get(f"_live_final_{lr.get('id')}"):
+                ss[f"_live_final_{lr.get('id')}"] = True
+                ss.pop(f"_kick_{wf}", None)
+                try:
+                    reload_results()
+                    auto_intel(force=True)
+                    for k in ("_auto_seeded", "_paid_loaded", "paid_radar_results", "watch_data", "_shl_at", "sa_lr", "_all_lr"):
+                        ss.pop(k, None)
+                    seed_from_auto()
+                except Exception:
+                    pass
+                st.rerun()
+            return
+        st.caption(f"بيتحدّث لوحده كل 20 ثانية · آخر تحديث {datetime.now(core.TZ).strftime('%H:%M:%S')} · تقدر تتنقل بين الأقسام عادي")
+
+
+def _live_search(key, lr):
+    ss = st.session_state
+    try:
+        stt = store.load_file(GH_TOKEN, GH_GIST, SEARCH_STATUS, {}) or {}
+    except Exception:
+        return
+    run_made = keys_mod.parse(lr.get("created") or "")
+    started = keys_mod.parse(stt.get("started") or "")
+    if not started or (run_made and started < run_made):
+        st.caption("🔎 البحث الشامل لسه مابدأش (بييجي بعد التقرير اليومي).")
+        return
+    scopes, done = stt.get("scopes") or [], stt.get("done") or []
+    st.progress(min(1.0, len(done) / max(1, len(scopes))), text=f"🔎 البحث الشامل: خلص {len(done)} من {len(scopes)} قسم")
+    nk = f"_live_n_{key}_{lr.get('id')}"
+    if len(done) > ss.get(nk, 0):
+        try:
+            got = store.load_file(GH_TOKEN, GH_GIST, RES_FILE, {}) or {}
+        except Exception:
+            got = {}
+        sigs = ss.setdefault("_res_sigs", {})
+        arrived = ss.setdefault(f"_live_arr_{key}", {})
+        for k in done:
+            v = got.get(k)
+            sv = keys_mod.parse((v or {}).get("saved_at") or "")
+            if isinstance(v, dict) and "items" in v and sv and sv >= started:
+                ss[f"res_{k}"] = v  # بيظهر في التاب بتاعه على طول
+                sigs[k] = _res_sig(v)
+                arrived[k] = [{"t": a.get("title_ar") or a.get("title") or "", "u": a.get("url", ""), "s": a.get("seendate", ""),
+                               "o": a.get("title", "")} for a in (v.get("items") or [])[:4]]
+        ss[nk] = len(done)
+    arrived = ss.get(f"_live_arr_{key}", {})
+    for k in done:
+        n = (stt.get("counts") or {}).get(k)
+        err = (stt.get("errors") or {}).get(k)
+        label = SEARCH_SCOPES.get(k, k)
+        if err:
+            st.markdown(f"❌ {label}: فشل ({err[:90]})")
+            continue
+        st.markdown(f"**✅ {label}: {n if n is not None else '؟'} نتيجة** — اتحمّلت في التاب بتاعها")
+        for it in arrived.get(k, []):
+            if it["u"]:
+                lnk = f"?view={quote(it['u'], safe='')}&seen={it['s']}&t={quote(it['o'][:200], safe='')}{auth_qs()}"
+                st.markdown(f"&nbsp;&nbsp;🆕 [{html.escape(it['t'][:140])}]({lnk})")
+    for k in scopes:
+        if k not in done:
+            st.caption(f"🕒 {SEARCH_SCOPES.get(k, k)} — لسه")
+
+
 def render_run_all():
     """زرار واحد بيشغّل كل الأتمتة ورا بعض على GitHub (all.yml)"""
     with st.container(border=True):
         st.markdown("#### ▶️ شغّل كل حاجة مرة واحدة")
-        st.caption("بيشغّل على GitHub ورا بعض: ① التقرير اليومي ← ② البحث الشامل في كل المصادر (بآخر كلمات وفترة حفظتها في البحث الشامل) "
-                   "← ③ التقرير المخصص ← ④ ملفات القضايا ← ⑤ الأقسام الذكية. بياخد من ساعة لساعتين، وتقدر تقفل التطبيق. "
+        st.caption("بيشغّل على GitHub ① التقرير اليومي و② البحث الشامل (بآخر كلمات وفترة حفظتها فيه) و③ التقرير المخصص «في نفس الوقت»، "
+                   "وبعد البحث الشامل ④ ملفات القضايا و⑤ الأقسام الذكية. كل خطوة ليها أقصى وقت، فالكل بيخلص في أقل من 3 ساعات "
+                   "حتى لو حاجة علّقت (عادةً ساعة أو أقل). وتقدر تقفل التطبيق. "
                    "مش بيصرف ذكاء اصطناعي ولا فلوس.")
         tok = _sec("ACTIONS_TOKEN")
         if not tok:
@@ -1451,7 +1676,10 @@ def render_run_all():
         if c1.button("▶️ شغّل كل الأتمتة دلوقتي", type="primary", use_container_width=True, disabled=busy, key="run_all_go"):
             ok, msg = gh_actions.dispatch(tok, repo, branch, "all.yml")
             ss.pop("_all_lr", None)
-            (st.success if ok else st.error)(msg)
+            if ok:
+                _kick("all.yml")
+                st.rerun()
+            st.error(msg)
         if c2.button("🔄 حمّل كل النتايج الجديدة", use_container_width=True, key="run_all_reload"):
             n = reload_results()
             auto_intel(force=True)
@@ -1459,6 +1687,7 @@ def render_run_all():
                 ss.pop(k, None)
             seed_from_auto()
             st.success(f"✅ اتحمّل ({n} قسم بحث + الأقسام الذكية + التقرير المخصص). افتح أي قسم تلاقي الجديد.")
+        render_live_run("all.yml", "all")
 
 
 def render_auto_intel_panel():
@@ -1479,6 +1708,8 @@ def render_auto_intel_panel():
         b1, b2 = st.columns(2)
         if b1.button("▶️ شغّل التحديث دلوقتي", type="primary", use_container_width=True, key="auto_intel_run", disabled=not tok):
             ok, msg = gh_actions.dispatch(tok, _sec("GH_REPO") or gh_actions.DEFAULT_REPO, _sec("GH_BRANCH") or "main", "monitor.yml")
+            if ok:
+                _kick("monitor.yml")
             (st.success if ok else st.error)(msg)
         if b2.button("🔄 حمّل آخر نتيجة", use_container_width=True, key="auto_intel_reload"):
             auto_intel(force=True)
@@ -1487,6 +1718,7 @@ def render_auto_intel_panel():
             st.success("✅ اتحمّلت. افتح أي قسم من الأقسام الذكية تلاقي النتيجة.")
         if not tok:
             st.caption("محتاج ACTIONS_TOKEN في Secrets عشان زرار التشغيل.")
+        render_live_run("monitor.yml", "monitor")
 
 
 def _pack_res(v):
@@ -3469,6 +3701,7 @@ def render_watch():
             st.session_state.pop("watch_msg", None)
             _watch_load(force=True)
             st.rerun()
+        render_live_run("watch.yml", "watch")
         if st.session_state.pop("watch_err", None):
             st.warning("علامة «خلصته» ما اتحفظتش في المرة الاخيرة.")
         if not data:
@@ -3748,8 +3981,55 @@ def _dos_item_md(it):
     return line
 
 
+def render_new_trend(P="pol"):
+    """أسهل طريقة تتابع ترند أو موضوع جديد: تكتب اسمه وكلماته، فيتعمل ملف دائم، ويبدأ بحث عنه في كل المصادر على GitHub"""
+    sx, egp = PROFS[P]["sx"], P == "eg"
+    with st.container(border=True):
+        st.markdown("#### ➕ تابع ترند أو موضوع جديد")
+        st.caption("اكتب اسم الموضوع وكلماته، ودوس «ابدأ المتابعة». بيحصل حاجتين: ① بيتعمل ملف دائم بالاسم ده يجمّع أي خبر جديد عن الموضوع، "
+                   "② بيبدأ بحث عنه في كل المصادر على GitHub عشان يجيب أخبار من دلوقتي ومن الأسبوع اللي فات (حوالي 10-20 دقيقة).")
+        nm = st.text_input("اسم الموضوع", key=f"nt_name{sx}", placeholder="مثال: القلق بين مصر وليبيا والسفينة الروسية")
+        c1, c2 = st.columns(2)
+        g1 = c1.text_input("① الكلمات الأساسية (بفاصلة، كلمة منهم تكفي)", key=f"nt_g1{sx}",
+                           placeholder="ليبيا، Libya، حفتر، Haftar، طرابلس، بنغازي")
+        g2 = c2.text_input("② كلمات لازم تيجي معاها (اختياري، كلمة منهم تكفي)", key=f"nt_g2{sx}",
+                           placeholder="مصر، Egypt، سفينة روسية، Russian ship، ناقلة، tanker")
+        st.caption("💡 حط الكلمات بالعربي والإنجليزي (والعبري لو إسرائيلي)، عشان المصادر الأجنبية. "
+                   "الخبر بيدخل الملف لو فيه كلمة من ① وكلمة من ② (لو كتبت ②). لو الملف طلع فاضي، شيل ② أو زوّد كلمات.")
+        days = pick(st, "يدوّر على أخبار آخر كام يوم؟", [1, 3, 7, 14, 30], 7, f"nt_days{sx}")
+        if st.button("🚀 ابدأ المتابعة", type="primary", use_container_width=True, key=f"nt_go{sx}"):
+            w1 = [w.strip() for w in re.split(r"[,،\n]", g1) if w.strip()]
+            w2 = [w.strip() for w in re.split(r"[,،\n]", g2) if w.strip()]
+            if not (nm.strip() and w1):
+                st.warning("اكتب اسم الموضوع وكلمة أساسية واحدة على الأقل.")
+                return
+            raw = json.loads(_dos_cfg_text(P))
+            raw = [x for x in raw if x.get("name") != nm.strip()]  # لو نفس الاسم موجود نحدّثه
+            raw.append({"name": nm.strip(), "type": "ترند", "all_of": [w1] + ([w2] if w2 else [])})
+            _dos_save_cfg(json.dumps(raw, ensure_ascii=False, indent=1), P)
+            msg = f"✅ اتعمل ملف «{nm.strip()}»."
+            tok = _sec("ACTIONS_TOKEN")
+            if tok and GH_TOKEN and GH_GIST:
+                try:
+                    store.save_file(GH_TOKEN, GH_GIST, TOPIC_CFG, {"topic": w1[0], "alts": "، ".join(w1[1:] + w2), "days": days,
+                                                                   "scope": "arab" if egp else "plus_eg", "profile": P})
+                    ok, m2 = gh_actions.dispatch(tok, _sec("GH_REPO") or gh_actions.DEFAULT_REPO, _sec("GH_BRANCH") or "main", "topic.yml")
+                    if ok:
+                        _kick("topic.yml")
+                    msg += (" وبدأ البحث عنه في كل المصادر على GitHub. بعد 10-20 دقيقة دوس «🔄 حمّل كل النتايج الجديدة» في غرفة العمليات، "
+                            "وارجع هنا هتلاقي الملف فيه الأخبار." if ok else f" بس البحث على GitHub مابدأش: {m2}")
+                except Exception as ex:
+                    msg += f" بس البحث على GitHub مابدأش ({type(ex).__name__})."
+            else:
+                msg += " (البحث التلقائي محتاج ACTIONS_TOKEN في Secrets، فاعمل بحث بكلماته من أي تاب.)"
+            st.session_state["dos_msg"] = msg
+            st.rerun()
+
+
 def _dos_group(g, scope, key):
     us = g.get("us_items") or []
+    st.caption("💡 مش فاهم الملف ده؟ افتح «🤖 برومبت التحليل» تحت واختار «📜 شرح للمواطن» أو «🧠 تحليل بس»، وانسخ البرومبت لجيميناي: "
+               "هيدوّر على الأخبار كاملة ويشرحلك الحكاية من أولها بالعامية.")
     st.markdown(f"**{len(g['items'])} عنصر** (أخبار {g['news_count']} · منشورات {g['post_count']}) من **{len(g['sources'])} مصدر** · "
                 f"من {g['first']} لحد {g['last']} · تصريحات: {g['statements']}"
                 + (f" · 📈 أيام ارتفاع: {'، '.join(g['spikes'])}" if g.get("spikes") else ""))
@@ -4014,6 +4294,7 @@ def render_topic_track(P="eg"):
                     st.success(f"✅ اتحمّل آخر نتايج محفوظة ({n_} قسم). النتيجة تحت.")
                 except Exception as ex:
                     st.error(f"تعذّر التحميل ({type(ex).__name__}).")
+            render_live_run("topic.yml", pk)
     if (not on_gh) and st.button("🔎 تتبّع الموضوع", type="primary", use_container_width=True, key=f"{pk}_go"):
         if not topic.strip():
             st.warning("اكتب الموضوع الأول.")
@@ -4251,6 +4532,7 @@ def render_search_all():
             except Exception as ex:
                 ss["sa_msg"] = f"تعذّر تحميل النتايج ({type(ex).__name__})."
             st.rerun()
+        render_live_run("search.yml", "sa")
 
 
 @_fragment
@@ -6046,6 +6328,7 @@ def render_dossiers(P="pol"):
         render_search_all()
     if auto_pull_jobs():
         st.success("✅ لقيت بحث جديد خلص على GitHub، وحمّلت نتايجه لوحدي.")
+    render_new_trend(P)
     pool = {a["url"]: a for a in _pool_for(P)}
     tabs_n = Counter(t_ for a in pool.values() for t_ in (a.get("tabs") or [a.get("tab", "")]) if (t_ in EG_TABS) == egp)
     st.markdown(f"🔎 **أرشيف البحث" + (" (الشأن المصري)" if egp else " (السياسة والمنطقة)") + f":** {len(pool)} خبر (آخر 21 يوم)"
@@ -6092,7 +6375,8 @@ def render_dossiers(P="pol"):
     window = pick(c1, "أقصى فرق بالأيام بين خبرين في نفس الخيط", range(1, 8), int(pp.get("win") or 3), f"dos_win{sx}")
     mins = pick(c2, "أقل عدد أطراف مشتركة (زي مصر + إثيوبيا = 2)", [1, 2, 3], int(pp.get("min") or 2), f"dos_min{sx}")
     _dos_save_prefs(P, {"days": dl, "link": "tr" if lk.startswith("📖") else "orig", "win": window, "min": mins})
-    cur_params = {"max_days": max_days, "window": window, "mins": mins, "use": sorted(use)}
+    cur_params = {"max_days": max_days, "window": window, "mins": mins, "use": sorted(use),
+                  "cfg": hashlib.sha1(_dos_cfg_text(P).encode("utf-8")).hexdigest()[:10]}  # ضفت ملف جديد = يربط تاني لوحده
     old_res = _dos_result(P)
     auto = False
     if old_res:
@@ -6307,6 +6591,7 @@ if _on("settings"):
                 tts_get(_k, None)  # احفظ نسخة
             st.caption("تُجهَّز القراءة بصوت عربي عصبي، ويمكن تنزيلها MP3 قبل نزول المترو للاستماع بلا إنترنت.")
         if IS_ADMIN:
+            render_alerts_settings()
             render_manage()
             st.divider()
             render_keys_admin()

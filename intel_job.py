@@ -15,6 +15,7 @@ import time
 import traceback
 from datetime import datetime, timedelta, timezone
 
+import job_guard  # noqa: F401 — بيدي كل اتصالات النت مهلة عشان مايعلّقش
 import core
 import early_warning as early_warning_mod
 import entity_intelligence as entity_intel_mod

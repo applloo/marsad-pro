@@ -10,6 +10,7 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 
+import job_guard  # لازم الأول: بيدي كل اتصالات النت مهلة
 import core
 import intelligence_pipeline as intelligence_pipeline_mod
 import store
@@ -18,6 +19,7 @@ from sources import ARABIC, EGYPT, ISRAEL, REGION, UK, USA, egypt_only, source_c
 from writers import WRITERS
 
 CFG, STATUS, RES = "marsad_search_cfg.json", "marsad_search_job.json", "marsad_results.json"
+SCOPE_LIMIT = float(os.getenv("SCOPE_LIMIT_MIN") or 15) * 60  # أقصى وقت لكل قسم
 # القسم: (المصادر، رمز بلد GDELT، رمز بلد أخبار Google)
 SCOPES = {"il": (ISRAEL, "IS", "IL"), "us": (USA, "US", "US"), "uk": (UK, "UK", "UK"), "rg": (REGION, None, "US"), "eg": (EGYPT, "EG", "EG")}
 WR_GROUPS = {"wr": ["US", "UK", "IL"], "wa": ["SA", "GCC", "EG", "AR"]}
@@ -198,10 +200,13 @@ def main():
 
     def put_status():
         status["updated"] = now_iso()
-        try:
-            store.save_file(tok, gid, STATUS, status)
-        except Exception as e:
-            print("status save failed", e, flush=True)
+        for attempt in range(4):  # 409 = GitHub لسه بيحفظ كتابة قبلها في نفس الـGist، فبنستنى ونعيد
+            try:
+                store.save_file(tok, gid, STATUS, status)
+                return
+            except Exception as e:
+                print(f"status save failed (محاولة {attempt + 1})", e, flush=True)
+                time.sleep(3 * (attempt + 1))
 
     def save_result(key, data):
         # محاولة تانية لترجمة العناوين اللي فضلت بلغتها (خدمة الترجمة ساعات بترفض لما الطلبات تكتر)
@@ -235,13 +240,20 @@ def main():
     put_status()
     for key in keys:
         t0 = time.time()
-        try:
+        print(f"▶ {key}: بدأ", flush=True)
+
+        def one(key=key):
             if key in SCOPES:
                 groups, gd, gn = SCOPES[key]
-                data = search_scope(key, groups, gd, gn, custom, terms, cfg, print)
+                d = search_scope(key, groups, gd, gn, custom, terms, cfg, print)
             else:
-                data = search_writers(key, WR_GROUPS[key], terms, cfg, custom_w, print)
-            save_result(key, data)
+                d = search_writers(key, WR_GROUPS[key], terms, cfg, custom_w, print)
+            print(f"{key}: البحث خلص ({len(d.get('items') or [])} خبر) — بنترجم ونجيب المقتطفات ونحفظ", flush=True)
+            save_result(key, d)
+            return d
+
+        try:
+            data = job_guard.run_limited(key, SCOPE_LIMIT, one, log=lambda m: print(m, flush=True))
             status["counts"][key] = len(data["items"])
             print(f"{key}: {len(data['items'])} نتيجة في {int(time.time() - t0)}ث", flush=True)
         except Exception as e:
@@ -257,3 +269,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+    sys.stdout.flush()
+    os._exit(0)  # لو فيه خيط علّق ورا (اتسابت مهلته) مانستناهوش

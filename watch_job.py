@@ -4,6 +4,7 @@
 import os
 import sys
 
+import job_guard  # noqa: F401 — بيدي كل اتصالات النت مهلة عشان مايعلّقش
 import core
 import store
 import watch

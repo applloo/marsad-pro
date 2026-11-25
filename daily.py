@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+import job_guard  # noqa: F401 — بيدي كل اتصالات النت مهلة عشان مايعلّقش
 import core
 import intel
 import links

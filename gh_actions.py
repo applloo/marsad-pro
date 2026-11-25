@@ -22,7 +22,27 @@ def last_run(token, repo=DEFAULT_REPO, workflow=WORKFLOW):
         return None
     x = runs[0]
     return {"status": x.get("status"), "conclusion": x.get("conclusion"), "url": x.get("html_url"),
-            "created": x.get("created_at"), "updated": x.get("updated_at")}
+            "created": x.get("created_at"), "updated": x.get("updated_at"), "id": x.get("id")}
+
+
+def run_steps(token, repo, run_id):
+    """خطوات تشغيل معيّن وحالة كل خطوة (عشان نعرض التقدّم أول بأول)"""
+    r = requests.get(f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs",
+                     params={"per_page": 5}, headers=_h(token), timeout=20)
+    r.raise_for_status()
+    out = []
+    for job in r.json().get("jobs") or []:
+        if not job.get("steps"):  # جهاز لسه مابدأش (مستني دوره أو مستني البحث الشامل)
+            out.append({"name": job.get("name") or "", "status": job.get("status"), "conclusion": job.get("conclusion"),
+                        "started": job.get("started_at"), "completed": job.get("completed_at")})
+        for s in job.get("steps") or []:
+            out.append({"name": s.get("name") or "", "status": s.get("status"), "conclusion": s.get("conclusion"),
+                        "started": s.get("started_at"), "completed": s.get("completed_at")})
+    return out
+
+
+def workflow_page(repo, workflow):
+    return f"https://github.com/{repo}/actions/workflows/{workflow}"
 
 
 def dispatch(token, repo=DEFAULT_REPO, branch="main", workflow=WORKFLOW):
@@ -47,6 +67,7 @@ WORKFLOWS = {
     "watch.yml": "التقرير المخصص",
     "monitor.yml": "تحديث الأقسام الذكية تلقائياً",
     "all.yml": "تشغيل كل الأتمتة مرة واحدة",
+    "alerts.yml": "إشعارات التطبيق",
 }
 
 

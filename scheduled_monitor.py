@@ -3,6 +3,7 @@
 from __future__ import annotations
 import os, re, json, hashlib
 from datetime import datetime, timezone
+import job_guard  # noqa: F401 — بيدي كل اتصالات النت مهلة عشان مايعلّقش
 import store
 import automated_workflow
 
