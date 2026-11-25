@@ -128,7 +128,7 @@ def src_label(domain, with_domain=True):
         return html.escape(str(domain or "")) + f" (تعذّر تحديد الدولة: {type(e).__name__})"
 
 
-APP_VERSION = "9.4"  # بيزيد مع كل نسخة جديدة
+APP_VERSION = "9.6"  # بيزيد مع كل نسخة جديدة
 st.set_page_config(page_title="Marsad | مركز الرصد والتحليل", page_icon="🔷", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown(
@@ -1383,8 +1383,16 @@ def auto_intel(force=False):
 
 def seed_from_auto():
     """لو مفيش نتيجة يدوي في التاب، اعرض آخر نتيجة تلقائية بدل الصفحة الفاضية"""
-    ai = auto_intel()
+    ai = auto_intel() or {}
     ss = st.session_state
+    if not ss.get("source_health_latest"):  # آخر فحص يدوي محفوظ، لو مفيش أحدث منه تلقائي
+        _hr = next((x for x in S().get("source_health_runs", []) if x.get("rows")), None)
+        if _hr and str(_hr.get("checked_at", "")) >= str((ai.get("health") or {}).get("checked_at", "")):
+            ss["source_health_latest"] = _hr
+    if not ss.get("intel_cluster_latest") and S().get("intel_dossiers"):
+        _dd = S()["intel_dossiers"][0]
+        if str(_dd.get("created_at", "")) >= str((ai.get("dossier") or {}).get("created_at", "")):
+            ss["intel_cluster_latest"] = _dd
     if not ai or ss.get("_auto_seeded") == ai.get("finished"):
         return
     ss["_auto_seeded"] = ai.get("finished")
@@ -1411,6 +1419,46 @@ def auto_note(kind):
                    "بيتحدّث لوحده كل يوم بعد البحث الشامل، والأزرار تحت لو عايز تعمل فحص بنفسك دلوقتي.")
     else:
         st.caption("🤖 القسم ده بيتحدّث لوحده كل يوم بعد البحث الشامل (من «غرفة العمليات» ← تحديث الأقسام الذكية). لسه ماتعملش تحديث تلقائي.")
+
+
+def render_run_all():
+    """زرار واحد بيشغّل كل الأتمتة ورا بعض على GitHub (all.yml)"""
+    with st.container(border=True):
+        st.markdown("#### ▶️ شغّل كل حاجة مرة واحدة")
+        st.caption("بيشغّل على GitHub ورا بعض: ① التقرير اليومي ← ② البحث الشامل في كل المصادر (بآخر كلمات وفترة حفظتها في البحث الشامل) "
+                   "← ③ التقرير المخصص ← ④ ملفات القضايا ← ⑤ الأقسام الذكية. بياخد من ساعة لساعتين، وتقدر تقفل التطبيق. "
+                   "مش بيصرف ذكاء اصطناعي ولا فلوس.")
+        tok = _sec("ACTIONS_TOKEN")
+        if not tok:
+            st.info("محتاج ACTIONS_TOKEN في Secrets بتاعة ستريمليت.")
+            return
+        repo, branch = _sec("GH_REPO") or gh_actions.DEFAULT_REPO, _sec("GH_BRANCH") or "main"
+        ss = st.session_state
+        t0, lr = ss.get("_all_lr", (0, None))
+        if time.time() - t0 > 45:
+            try:
+                lr = gh_actions.last_run(tok, repo, "all.yml")
+            except Exception:
+                lr = None
+            ss["_all_lr"] = (time.time(), lr)
+        busy = bool(lr and lr.get("status") in ("queued", "in_progress", "waiting", "requested"))
+        if lr:
+            made = keys_mod.parse(lr.get("created") or "")
+            stamp = made.astimezone(core.TZ).strftime("%Y-%m-%d %H:%M") if made else ""
+            state = "⏳ شغال دلوقتي" if busy else {"success": "✅ خلص", "failure": "❌ فيه خطوة وقعت"}.get(lr.get("conclusion") or "", lr.get("conclusion") or "")
+            st.markdown(f"آخر تشغيل: **{state}** · {stamp} (القاهرة) · [التفاصيل]({lr.get('url')})")
+        c1, c2 = st.columns(2)
+        if c1.button("▶️ شغّل كل الأتمتة دلوقتي", type="primary", use_container_width=True, disabled=busy, key="run_all_go"):
+            ok, msg = gh_actions.dispatch(tok, repo, branch, "all.yml")
+            ss.pop("_all_lr", None)
+            (st.success if ok else st.error)(msg)
+        if c2.button("🔄 حمّل كل النتايج الجديدة", use_container_width=True, key="run_all_reload"):
+            n = reload_results()
+            auto_intel(force=True)
+            for k in ("_auto_seeded", "_paid_loaded", "paid_radar_results", "watch_data", "_shl_at", "dos_res", "dos_res_eg"):
+                ss.pop(k, None)
+            seed_from_auto()
+            st.success(f"✅ اتحمّل ({n} قسم بحث + الأقسام الذكية + التقرير المخصص). افتح أي قسم تلاقي الجديد.")
 
 
 def render_auto_intel_panel():
@@ -6186,8 +6234,12 @@ if _on("search", "eg"):
 if _on("ops"):
     with tab_dr:
         if IS_ADMIN:
-            render_workflow_overview()
+            st.markdown("### ⏱️ غرفة العمليات: كل الأتمتة في مكان واحد")
+            render_run_all()
+            st.markdown("#### أو شغّل كل حاجة لوحدها")
+            render_search_all()
             render_auto_intel_panel()
+            render_workflow_overview()
             render_watch()
             with st.expander("🔗 مزامنة إصدار المرصد إلى GitHub", expanded=False):
                 sync_repo = _sec("GH_REPO") or gh_actions.DEFAULT_REPO
