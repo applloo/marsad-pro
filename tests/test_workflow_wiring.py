@@ -50,8 +50,17 @@ class WorkflowWiringTests(unittest.TestCase):
         text = Path('.github/workflows/all.yml').read_text(encoding='utf-8')
         order = [text.index(x) for x in ('daily.py', 'search_job.py', 'watch_job.py', 'scheduled_monitor.py', 'intel_job.py')]
         self.assertEqual(order, sorted(order))
-        self.assertEqual(text.count('continue-on-error: true'), 4)
         self.assertIn('workflow_dispatch:', text)
+        import yaml
+        jobs = yaml.safe_load(text)['jobs']
+        # الثلاثة الأوائل بالتوازي، وملفات القضايا والأقسام الذكية بعد البحث الشامل حتى لو وقع
+        self.assertEqual(jobs['after_search']['needs'], 'search')
+        self.assertEqual(jobs['after_search']['if'], 'always()')
+        for j in jobs.values():
+            self.assertIn('timeout-minutes', j)
+            for s in j['steps']:
+                if 'python ' in str(s.get('run', '')):
+                    self.assertIn('timeout-minutes', s)
 
     def test_backup_workflow_is_not_part_of_active_operations(self):
         self.assertFalse(Path('.github/workflows/backup.yml').exists())
