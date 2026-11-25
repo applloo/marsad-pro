@@ -1,20 +1,21 @@
 name: تشغيل كل الأتمتة مرة واحدة
-# زرار واحد من «غرفة العمليات» بيشغّل كل حاجة ورا بعض: التقرير اليومي ← البحث الشامل ← التقرير المخصص ← ملفات القضايا ← الأقسام الذكية.
-# لو خطوة وقعت الباقي بيكمل. مالوش ميعاد ثابت (المواعيد الثابتة في المهام التانية).
+# زرار واحد من «غرفة العمليات».
+# بقى يشغّل التقرير اليومي والبحث الشامل والتقرير المخصص «في نفس الوقت» (3 أجهزة على GitHub) بدل ورا بعض،
+# وبعد ما البحث الشامل يخلص بيحدّث ملفات القضايا والأقسام الذكية (لأنهم بيعتمدوا على نتايجه).
+# وكل خطوة ليها أقصى وقت، فلو حاجة علّقت بتتقفل لوحدها والباقي يكمل.
 concurrency:
   group: marsad-all-${{ github.ref }}
   cancel-in-progress: false
 on:
   workflow_dispatch: {}
+env:
+  GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+  GIST_ID: ${{ secrets.GIST_ID }}
 jobs:
-  all:
+  daily:
+    name: ① التقرير اليومي
     runs-on: ubuntu-latest
-    timeout-minutes: 240
-    permissions:
-      contents: read
-    env:
-      GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
-      GIST_ID: ${{ secrets.GIST_ID }}
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -22,16 +23,53 @@ jobs:
           python-version: "3.12"
       - run: pip install requests deep-translator trafilatura
       - name: ① التقرير اليومي
-        continue-on-error: true
+        timeout-minutes: 30
         run: python daily.py
+
+  search:
+    name: ② البحث الشامل
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests deep-translator trafilatura
       - name: ② البحث الشامل في كل المصادر
-        continue-on-error: true
+        timeout-minutes: 100
         run: python search_job.py
+
+  watch:
+    name: ③ التقرير المخصص
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests deep-translator trafilatura
       - name: ③ التقرير المخصص (مواضيع المتابعة)
-        continue-on-error: true
+        timeout-minutes: 90
         run: python watch_job.py
+
+  after_search:
+    name: ④⑤ ملفات القضايا والأقسام الذكية
+    needs: search
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests deep-translator trafilatura
       - name: ④ تحديث ملفات القضايا
         continue-on-error: true
+        timeout-minutes: 35
         run: python scheduled_monitor.py
       - name: ⑤ الأقسام الذكية (المدفوع، التجميع، الكيانات، الإنذار المبكر، صحة المصادر)
+        timeout-minutes: 40
         run: python intel_job.py

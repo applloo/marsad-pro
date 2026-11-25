@@ -1,0 +1,26 @@
+name: إشعارات تطبيق الموبايل والكمبيوتر
+# بيدوّر على كلماتك ويكتب الإشعارات الجديدة كل ساعة ونص تقريباً (الدقايق مش على رأس الساعة عشان GitHub مايأخرهاش).
+concurrency:
+  group: marsad-alerts-${{ github.ref }}
+  cancel-in-progress: false
+on:
+  schedule:
+    - cron: "17 0-23/3 * * *"   # 00:17، 03:17، 06:17 ...
+    - cron: "47 1-23/3 * * *"   # 01:47، 04:47، 07:47 ... (يعني كل ساعة ونص)
+  workflow_dispatch: {}
+jobs:
+  alerts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests deep-translator trafilatura
+      - run: python alerts_job.py
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
