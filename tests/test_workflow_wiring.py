@@ -20,12 +20,21 @@ class WorkflowWiringTests(unittest.TestCase):
             groups.append(line.split('group:', 1)[1].strip())
         self.assertEqual(len(groups), len(set(groups)))
 
-    def test_gist_token_legacy_and_current_names_are_supported(self):
+    def test_gist_token_has_no_github_token_fallback(self):
+        # GITHUB_TOKEN مايقدرش يكتب في الـGist، فالرجوع ليه كان بيخلّي المهمة تفشل بخطأ مش مفهوم
         files = list(Path('.github/workflows').glob('*.yml'))
         for path in files:
             text = path.read_text(encoding='utf-8')
             if 'GIST_TOKEN:' in text:
-                self.assertIn('secrets.GIST_TOKEN || secrets.GITHUB_TOKEN', text, path.name)
+                self.assertIn('GIST_TOKEN: ${{ secrets.GIST_TOKEN }}', text, path.name)
+                self.assertNotIn('secrets.GITHUB_TOKEN', text, path.name)
+
+    def test_smart_sections_run_after_full_search_without_repeating_it(self):
+        text = Path('.github/workflows/monitor.yml').read_text(encoding='utf-8')
+        self.assertIn('workflow_run:', text)
+        self.assertIn('البحث الشامل في كل المصادر', text)
+        self.assertIn('python intel_job.py', text)
+        self.assertNotIn('search_job.py', text)
 
     def test_daily_report_schedule_is_preserved(self):
         text = Path('.github/workflows/daily.yml').read_text(encoding='utf-8')

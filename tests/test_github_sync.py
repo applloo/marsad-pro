@@ -39,7 +39,7 @@ class GitHubSyncTests(unittest.TestCase):
         from pathlib import Path
         ci = Path('.github/workflows/ci.yml').read_text(encoding='utf-8')
         self.assertIn('pull_request:', ci)
-        self.assertIn('python -m unittest discover', ci)
+        self.assertIn('python -m pytest -q tests', ci)
         self.assertIn('cancel-in-progress: false', ci)
 
     def test_validate_repo(self):

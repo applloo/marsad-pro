@@ -3,7 +3,7 @@ import search_job
 
 def test_writer_search_applies_date_filter_and_card_translation(monkeypatch):
     from datetime import datetime, timezone, timedelta
-    now = datetime(2026, 11, 23, 18, 0, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)  # كان تاريخ ثابت فالاختبار بيفشل بعد يومين
     recent = (now - timedelta(hours=2)).strftime('%Y%m%dT%H%M%SZ')
     old = (now - timedelta(days=5)).strftime('%Y%m%dT%H%M%SZ')
     monkeypatch.setattr(search_job, 'WRITERS', [

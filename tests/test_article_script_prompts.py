@@ -36,3 +36,11 @@ def test_alternative_search_links_use_title_and_author():
     assert any('Paid+headline' in x['google'] or 'Paid%2Bheadline' in x['google'] for x in links)
     assert all(x['google'].startswith('https://www.google.com/search?q=') for x in links)
     assert all(x['news'].startswith('https://news.google.com/search?q=') for x in links)
+
+
+def test_script_prompts_include_source_check_and_cairo_style():
+    import article_script_prompts as asp
+    prompt = asp.build_script_prompt([{'title': 'x', 'url': 'https://a.example', 'source': 'Guardian'}])
+    assert 'فحص المصادر والكتّاب' in prompt
+    assert 'قهوة بلدي' in prompt
+    assert 'اللي جبته من برا الملف' in prompt
