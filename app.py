@@ -128,7 +128,7 @@ def src_label(domain, with_domain=True):
         return html.escape(str(domain or "")) + f" (تعذّر تحديد الدولة: {type(e).__name__})"
 
 
-APP_VERSION = "9.3"  # بيزيد مع كل نسخة جديدة
+APP_VERSION = "9.4"  # بيزيد مع كل نسخة جديدة
 st.set_page_config(page_title="Marsad | مركز الرصد والتحليل", page_icon="🔷", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown(
@@ -233,6 +233,11 @@ h2{font-size:clamp(1.35rem,2vw,1.8rem)!important;}
 [data-baseweb="select"] *{color:#17243b!important;}
 [data-testid="stRadio"] label,[data-testid="stCheckbox"] label{color:#edf3ff!important;}
 [data-testid="stAlert"]{border-radius:14px!important;}
+[data-testid="stAlert"] > div, [data-testid="stAlertContainer"]{background:rgba(28,58,98,.70)!important;color:#eef4ff!important;}
+[data-testid="stAlert"] p, [data-testid="stAlert"] div, [data-testid="stAlert"] span{color:#eef4ff!important;}
+[data-testid="stExpander"] details, [data-testid="stExpander"] summary, [data-testid="stExpander"] details[open] > summary,
+[data-testid="stExpander"] summary:hover, [data-testid="stExpander"] summary:focus{background:transparent!important;color:#eef4ff!important;}
+[data-testid="stExpander"] summary p, [data-testid="stExpander"] summary span{color:#eef4ff!important;}
 .stProgress>div>div{background:linear-gradient(90deg,#35d7ee,#a78bfa)!important;}
 a{color:#74ddf1!important;}
 .card,.hm-row{border:1px solid rgba(105,160,215,.32)!important;border-radius:17px!important;background:linear-gradient(145deg,rgba(25,48,84,.96),rgba(11,27,51,.96))!important;box-shadow:0 12px 26px rgba(0,0,0,.18),inset 0 1px rgba(255,255,255,.05)!important;}
@@ -979,7 +984,7 @@ def go_basket():
 def basket_button(container, a, src, wkey):
     """زرار ضيف/شيل من السلة جنب أي مقال"""
     inb = in_basket(a.get("url", ""))
-    container.button("✅ في السلة (دوس تشيله)" if inb else "🧺 ضيفه للسلة (لسكريبت أو ربط)", key=f"bk_{wkey}",
+    container.button("✅ في السلة (دوس تشيله)" if inb else "🧺 ضيفه لسلة المقالات", key=f"bk_{wkey}",
                      on_click=basket_toggle, args=(a, src), use_container_width=True)
 
 
@@ -1359,6 +1364,7 @@ if PERSIST and "_res_loaded" not in st.session_state:
 
 
 AUTO_INTEL_FILE = "marsad_auto_intel.json"
+PAID_FILE = "marsad_paid_results.json"
 
 
 def auto_intel(force=False):
@@ -1382,8 +1388,6 @@ def seed_from_auto():
     if not ai or ss.get("_auto_seeded") == ai.get("finished"):
         return
     ss["_auto_seeded"] = ai.get("finished")
-    if ai.get("paid") and (not ss.get("paid_radar_results") or ss["paid_radar_results"].get("auto")):
-        ss["paid_radar_results"] = {**ai["paid"], "auto": True}
     if ai.get("health") and (not ss.get("source_health_latest") or ss["source_health_latest"].get("auto")):
         ss["source_health_latest"] = {**ai["health"], "auto": True}
     if ai.get("dossier") and (not ss.get("intel_cluster_latest") or ss["intel_cluster_latest"].get("auto")):
@@ -1850,15 +1854,16 @@ def render_results(key):
         with st.container(border=True):
             st.markdown(card_html(a), unsafe_allow_html=True)
             _article_key = key + "_" + hashlib.sha256(str(url or f"{key}_{i}").encode("utf-8")).hexdigest()[:12] + f"_{i}"  # فيه اسم التاب ورقم الكارت عشان مايتكررش
-            _act0, _act1, _act3, _act2 = st.columns(4)
+            _act0, _act1 = st.columns(2)
+            _act3, _act2 = st.columns(2)
             basket_button(_act0, a, key, _article_key)
-            if _act3.button("🔎 برومبت: دوّر على الخبر كامل", key=f"find_one_{_article_key}", use_container_width=True):
+            if _act3.button("🔎 برومبت يدوّر على الخبر كامل", key=f"find_one_{_article_key}", use_container_width=True):
                 st.session_state["article_prompt_active"] = {"url": url, "title": a.get("title_ar") or a.get("title") or "خبر",
                                                              "prompt": article_script_prompts_mod.build_find_prompt([{**a, "outlet": src_plain(a.get("domain", ""))}])}
-            if _act1.button("🎬 برومبت سكريبت للمقال ده", key=f"script_one_{_article_key}", use_container_width=True):
+            if _act1.button("🎬 برومبت سكريبت للخبر ده", key=f"script_one_{_article_key}", use_container_width=True):
                 st.session_state["article_prompt_active"] = {"url": url, "title": a.get("title_ar") or a.get("title") or "مقال",
                                                              "prompt": article_script_prompts_mod.build_script_prompt([a])}
-            if _act2.button("🔎 بدائل مجانية مفتوحة", key=f"alt_one_{_article_key}", use_container_width=True):
+            if _act2.button("🌐 روابط تدوّر على نسخة مجانية", key=f"alt_one_{_article_key}", use_container_width=True):
                 st.session_state["article_alt_active"] = {"url": url, "title": a.get("title_ar") or a.get("title") or "مقال", "links": article_script_prompts_mod.alternative_search_links(a)}
             _ap = st.session_state.get("article_prompt_active") or {}
             if _ap.get("url") == url:
@@ -2252,7 +2257,43 @@ def home_search(q, keys, days, join, bar, use_gd=False):
                                     "days": days, "errors": [], "used": [], "summaries": {}}
 
 
+def search_health_line():
+    """سطر واضح فوق الرئيسية: آخر بحث شامل اشتغل إمتى ونجح ولا لأ (عشان تعرف النتايج قديمة ليه)"""
+    if not PERSIST:
+        return
+    ss = st.session_state
+    if time.time() - ss.get("_shl_at", 0) > 120:
+        info = {}
+        try:
+            info["job"] = store.load_file(GH_TOKEN, GH_GIST, "marsad_search_job.json", {}) or {}
+        except Exception as ex:
+            info["err"] = type(ex).__name__
+        tok = _sec("ACTIONS_TOKEN")
+        if tok:
+            try:
+                info["run"] = gh_actions.last_run(tok, _sec("GH_REPO") or gh_actions.DEFAULT_REPO, "search.yml")
+            except Exception:
+                info["run"] = None
+        ss["_shl"], ss["_shl_at"] = info, time.time()
+    info = ss.get("_shl") or {}
+    job, run = info.get("job") or {}, info.get("run")
+    fin = keys_mod.parse(job.get("finished") or job.get("updated") or "")
+    if fin and fin.tzinfo is None:
+        fin = fin.replace(tzinfo=timezone.utc)
+    age_h = (datetime.now(timezone.utc) - fin).total_seconds() / 3600 if fin else None
+    when = fin.astimezone(core.TZ).strftime("%Y-%m-%d %H:%M") if fin else "مفيش"
+    if run and run.get("conclusion") == "failure":
+        st.error(f"❌ آخر «بحث شامل» على GitHub فشل. آخر نتيجة سليمة: {when}. افتح [تفاصيل التشغيل]({run.get('url')}) وابعت صورة الخطأ. "
+                 "أشهر سبب: `GIST_TOKEN` أو `GIST_ID` مش متحطين في Secrets بتاعة الـrepo ده (Settings ← Secrets and variables ← Actions).")
+    elif age_h is not None and age_h > 26:
+        st.warning(f"⚠️ آخر «بحث شامل» خلص {when} (من {int(age_h)} ساعة)، يعني بحث النهارده الصبح ماشتغلش أو ماحفظش. "
+                   "روح «غرفة العمليات» وشوف حالة التشغيلات، أو دوس «ابحث في كل المصادر دلوقتي».")
+    elif fin:
+        st.caption(f"✅ آخر «بحث شامل» خلص {when} (القاهرة).")
+
+
 def render_home():
+    search_health_line()
     st.markdown("<div class='marsad-topline'><div><div class='marsad-kicker'>MARSAD INTELLIGENCE DESK</div><div style='font-size:1.35rem;font-weight:850;color:#fff'>مركز القيادة والرصد</div><div class='sub'>تابع الإشارات الإخبارية وافتح أدوات التحليل من مساحة عمل واحدة</div></div><div style='font-size:2.5rem;filter:drop-shadow(0 8px 16px rgba(53,215,238,.28))'>📡</div></div>", unsafe_allow_html=True)
     st.markdown("#### 🏠 لوحة القيادة")
     q = st.text_input("🔎 بحث شامل في المرصد", key="home_q", placeholder="اكتب موضوعاً أو دولة أو شخصية أو حدثاً...")
@@ -2474,13 +2515,37 @@ if _on("search", "paid"):
                 with st.spinner("جارٍ رصد العناوين المنشورة علناً وترجمتها للعربية…"):
                     paid_items, paid_notes = paid_radar_mod.search_paid_headlines(chosen_paid, paid_days, terms_paid, max_items=120)
                     core.translate_titles(paid_items)
-                st.session_state["paid_radar_results"] = {"items": paid_items, "notes": paid_notes, "days": paid_days}
+                st.session_state["paid_radar_results"] = {"items": paid_items, "notes": paid_notes, "days": paid_days,
+                                                          "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+                if PERSIST:  # النتيجة بتتحفظ لحد ما تعمل بحث جديد
+                    try:
+                        store.save_file(GH_TOKEN, GH_GIST, PAID_FILE, json.loads(json.dumps(st.session_state["paid_radar_results"], ensure_ascii=False, default=str)))
+                    except Exception as ex:
+                        st.caption(f"النتيجة ما اتحفظتش ({type(ex).__name__}).")
                 st.session_state["paid_radar_alternatives"] = {}
                 st.session_state["paid_radar_read"] = {}
+        if "paid_radar_results" not in st.session_state and PERSIST and not st.session_state.get("_paid_loaded"):
+            # آخر نتيجة محفوظة: بتاعتك (آخر مرة دوست البحث) أو التلقائية، الأحدث فيهم
+            st.session_state["_paid_loaded"] = True
+            try:
+                _pd = store.load_file(GH_TOKEN, GH_GIST, PAID_FILE, None) or {}
+            except Exception:
+                _pd = {}
+            _ai = dict(auto_intel().get("paid") or {})
+            if _ai.get("items"):
+                _ai["auto"] = True
+            _best = max((x for x in (_pd, _ai) if x.get("items")), key=lambda x: str(x.get("at", "")), default=None)
+            if _best:
+                st.session_state["paid_radar_results"] = _best
         paid_data = st.session_state.get("paid_radar_results")
         if paid_data:
-            for note in paid_data.get("notes", []):
-                st.caption(note)
+            _pat = keys_mod.parse(paid_data.get("at") or "")
+            if _pat:
+                _pat = _pat if _pat.tzinfo else _pat.replace(tzinfo=timezone.utc)
+                st.caption(f"🕒 النتيجة دي اتعملت {_pat.astimezone(core.TZ).strftime('%Y-%m-%d %H:%M')} (القاهرة)" + (" · تلقائي" if paid_data.get("auto") else ""))
+            with st.expander("🔧 تفاصيل البحث (للمراجعة بس)", expanded=False):
+                for note in paid_data.get("notes", []):
+                    st.caption(note)
             paid_items = paid_data.get("items", [])
             st.markdown(f"**{len(paid_items)} عنواناً مرصوداً** خلال آخر {paid_data.get('days', paid_days)} يوم")
             if not paid_items:
@@ -2498,6 +2563,21 @@ if _on("search", "paid"):
                     st.markdown(f"**التاريخ:** {fmt_seen(item.get('seendate', ''))}")
                     if original:
                         st.markdown(f"[فتح صفحة المصدر الأصلية]({original})")
+                    _pitem = {**item, "url": original or item.get("url", ""), "title": title_en, "title_ar": title_ar,
+                              "outlet": item.get("paid_source", source_name(host))}
+                    _p1, _p2 = st.columns(2)
+                    _p3, _p4 = st.columns(2)
+                    basket_button(_p1, _pitem, "paid", f"paid_{key}")
+                    if _p2.button("🔎 برومبت يدوّر على الخبر كامل", key=f"paid_find_{key}", use_container_width=True):
+                        st.session_state["article_prompt_active"] = {"url": _pitem["url"], "prompt": article_script_prompts_mod.build_find_prompt([_pitem])}
+                    if _p3.button("🎬 برومبت سكريبت للخبر ده", key=f"paid_script_{key}", use_container_width=True):
+                        st.session_state["article_prompt_active"] = {"url": _pitem["url"], "prompt": article_script_prompts_mod.build_script_prompt([_pitem])}
+                    if st.session_state.get("flash"):
+                        _p4.caption(st.session_state.get("flash"))
+                    _pp = st.session_state.get("article_prompt_active") or {}
+                    if _pp.get("url") == _pitem["url"]:
+                        st.caption("البرومبت جاهز. انسخه من زرار النسخ فوق على اليمين.")
+                        st.code(_pp["prompt"], language=None)
                     st.caption("المتاح هنا عنوان وبيانات وصفية علنية. لو النص الكامل خلف اشتراك، لن نحاول استخراجه أو تخطي بوابة الدفع.")
                     links_paid = paid_radar_mod.legal_search_links(title_en, original)
                     st.markdown("**مسارات البحث والوصول القانوني:** " + " · ".join(f"[{label}]({url})" for label, url in links_paid))
@@ -2508,7 +2588,13 @@ if _on("search", "paid"):
                     alt_data = st.session_state.get("paid_radar_alternatives", {}).get(key)
                     if alt_data:
                         st.info(alt_data.get("note", ""))
-                        for j, alt in enumerate(alt_data.get("items", [])):
+                        _good = [x for x in alt_data.get("items", []) if float(x.get("match_score") or 0) >= 0.2]
+                        _weak = len(alt_data.get("items", [])) - len(_good)
+                        if not _good:
+                            st.warning("ملقيناش تغطية مفتوحة قريبة كفاية من العنوان ده. جرّب «🔎 برومبت يدوّر على الخبر كامل» مع ذكاء اصطناعي عنده بحث، أو روابط البحث اللي فوق.")
+                        elif _weak:
+                            st.caption(f"شلنا {_weak} نتيجة بعيدة عن العنوان (تشابه أقل من 20%).")
+                        for j, alt in enumerate(_good):
                             st.markdown(f"**{j+1}. {alt.get('title_ar') or alt.get('title')}**")
                             st.caption(f"{alt.get('source_name')} · {alt.get('domain')} · {alt.get('match_label')} · درجة تشابه العنوان {alt.get('match_score', 0):.0%}")
                             st.markdown(f"[فتح التغطية المفتوحة]({alt.get('url')})")
