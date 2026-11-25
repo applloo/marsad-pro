@@ -4,7 +4,7 @@ concurrency:
   cancel-in-progress: false
 on:
   schedule:
-    - cron: "0 4 * * *"   # 04:00 UTC = 06:00 بتوقيت القاهرة (الشتوي)
+    - cron: "7 6 * * *"   # 06:07 UTC = 08:07 بتوقيت القاهرة (بعد التقرير اليومي بتاع التطبيق القديم بساعتين)
   workflow_dispatch: {}    # زر «Run workflow» للتشغيل اليدوي
 jobs:
   daily:
