@@ -38,12 +38,12 @@ class WorkflowWiringTests(unittest.TestCase):
 
     def test_daily_report_schedule_is_preserved(self):
         text = Path('.github/workflows/daily.yml').read_text(encoding='utf-8')
-        self.assertIn('cron: "0 4 * * *"', text)
+        self.assertIn('cron: "7 6 * * *"', text)
         self.assertIn('workflow_dispatch:', text)
 
     def test_full_search_is_scheduled_and_remains_manual(self):
         text = Path('.github/workflows/search.yml').read_text(encoding='utf-8')
-        self.assertIn('cron: "0 7 * * *"', text)
+        self.assertIn('cron: "7 9 * * *"', text)
         self.assertIn('workflow_dispatch:', text)
 
     def test_backup_workflow_is_not_part_of_active_operations(self):
