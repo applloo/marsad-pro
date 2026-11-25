@@ -1,0 +1,37 @@
+name: تشغيل كل الأتمتة مرة واحدة
+# زرار واحد من «غرفة العمليات» بيشغّل كل حاجة ورا بعض: التقرير اليومي ← البحث الشامل ← التقرير المخصص ← ملفات القضايا ← الأقسام الذكية.
+# لو خطوة وقعت الباقي بيكمل. مالوش ميعاد ثابت (المواعيد الثابتة في المهام التانية).
+concurrency:
+  group: marsad-all-${{ github.ref }}
+  cancel-in-progress: false
+on:
+  workflow_dispatch: {}
+jobs:
+  all:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    env:
+      GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+      GIST_ID: ${{ secrets.GIST_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests deep-translator trafilatura
+      - name: ① التقرير اليومي
+        continue-on-error: true
+        run: python daily.py
+      - name: ② البحث الشامل في كل المصادر
+        continue-on-error: true
+        run: python search_job.py
+      - name: ③ التقرير المخصص (مواضيع المتابعة)
+        continue-on-error: true
+        run: python watch_job.py
+      - name: ④ تحديث ملفات القضايا
+        continue-on-error: true
+        run: python scheduled_monitor.py
+      - name: ⑤ الأقسام الذكية (المدفوع، التجميع، الكيانات، الإنذار المبكر، صحة المصادر)
+        run: python intel_job.py
