@@ -16,5 +16,5 @@ jobs:
       - run: pip install requests deep-translator trafilatura
       - run: python topic_job.py
         env:
-          GIST_TOKEN: ${{ secrets.GIST_TOKEN || secrets.GITHUB_TOKEN }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}

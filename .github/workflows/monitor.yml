@@ -1,15 +1,18 @@
-name: مراقبة القضايا والتحديث الاستخباراتي
+name: تحديث الأقسام الذكية تلقائياً
+# بيشتغل لوحده بعد ما «البحث الشامل» يخلص (مش بيعيد البحث تاني)، أو بزر من التطبيق.
+# بيحدّث: ملفات القضايا، رادار التقارير المدفوعة، تجميع الأحداث والكيانات، الإنذار المبكر، صحة المصادر.
 concurrency:
-  group: marsad-case-monitor-${{ github.ref }}
+  group: marsad-intel-${{ github.ref }}
   cancel-in-progress: false
 on:
-  schedule:
-    - cron: "17 4 * * *" # يومياً 06:17 بتوقيت القاهرة شتاءً، 07:17 صيفاً
+  workflow_run:
+    workflows: ["البحث الشامل في كل المصادر"]
+    types: [completed]
   workflow_dispatch: {}
 jobs:
-  monitor:
+  intel:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 90
     permissions:
       contents: read
     steps:
@@ -17,14 +20,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r requirements.txt
-      - name: جمع الأخبار وفق إعدادات المرصد
-        run: python search_job.py
-        env:
-          GIST_TOKEN: ${{ secrets.GIST_TOKEN || secrets.GITHUB_TOKEN }}
-          GIST_ID: ${{ secrets.GIST_ID }}
-      - name: تحديث ملفات القضايا وتشغيل التحليل
+      - run: pip install requests deep-translator trafilatura
+      - name: تحديث ملفات القضايا من نتايج البحث الشامل
+        continue-on-error: true
         run: python scheduled_monitor.py
         env:
-          GIST_TOKEN: ${{ secrets.GIST_TOKEN || secrets.GITHUB_TOKEN }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+      - name: الرادار المدفوع والتجميع والكيانات والإنذار المبكر وصحة المصادر
+        run: python intel_job.py
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
