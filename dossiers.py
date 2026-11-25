@@ -191,10 +191,19 @@ def from_app_item(a, label_fn, country_fn, origin):
     snip = a.get("snip_ar") or ""
     if not snip and a.get("points_ar"):
         snip = " ".join(str(p) for p in a["points_ar"][:2])
+    if not snip and a.get("summary_status") in ("translated_snippet", "page_teaser", "page_teaser_untranslated"):
+        snip = a.get("summary_ar") or ""
+    if not snip:
+        snip = a.get("teaser") or ""
     day = parse_day(a.get("seendate")) or parse_day(a.get("saved_at")) or date.today()
-    return make_item("خبر", day, label_fn(dom) if dom else (a.get("outlet") or ""), a.get("country_ar") or country_fn(dom),
-                     title_ar or title, a.get("url", ""), snip, extra_text=f"{title} {a.get('title_en', '')}", origin=origin,
-                     when=parse_dt(a.get("seendate")))
+    it = make_item("خبر", day, label_fn(dom) if dom else (a.get("outlet") or ""), a.get("country_ar") or country_fn(dom),
+                   title_ar or title, a.get("url", ""), snip, extra_text=f"{title} {a.get('title_en', '')}", origin=origin,
+                   when=parse_dt(a.get("seendate")))
+    if title and title != (title_ar or title):
+        it["orig_title"] = title  # العنوان بلغته الأصلية: بيستخدمه الذكاء الاصطناعي في البحث عن الخبر كامل
+    if a.get("writer") or a.get("author"):
+        it["writer"] = a.get("writer") or a.get("author")
+    return it
 
 
 def from_post(p):
@@ -390,14 +399,33 @@ def item_lines(items, indent=""):
     for it in items:
         country = it.get("country") or "بلد غير محدد"
         lines.append(f"{indent}- {it['date']} | {it['kind']} | {it['source']} ({country}) | {it['title']}")
+        if it.get("orig_title"):
+            lines.append(f"{indent}  العنوان الأصلي: {it['orig_title']}")
+        if it.get("writer"):
+            lines.append(f"{indent}  الكاتب: {it['writer']}")
         if it.get("url"):
             lines.append(f"{indent}  {it['url']}")
         if it.get("summary"):
-            lines.append(f"{indent}  {'النص' if it['kind'] == 'منشور' else 'ملخص'}: {it['summary']}")
+            lines.append(f"{indent}  {'النص' if it['kind'] == 'منشور' else 'مقتطف (مش النص كامل)'}: {it['summary']}")
     return lines
 
 
-PROMPT = """أنت محلل أخبار. حلل {scope} ده بس بالمعلومات اللي تحت، وما تضيفش أي حدث أو تصريح أو رقم مش موجود فيها.
+EXCERPT_RULE = """مهم عن الأخبار اللي فوق: دي عناوين ومقتطفات قصيرة، مش نص الخبر كامل. لو معاك بحث على النت، قبل ما تحلل دوّر على كل خبر مهم عشان تجيب نصه كامل أو ملخص موثوق ليه:
+1) بالعنوان الأصلي بين علامتين تنصيص "..." (ولو مفيش، بالعنوان العربي).
+2) بترجمة العنوان للغة الجريدة الأصلية أو للإنجليزي، وبمعناه بكلام تاني (الأسماء والمكان والرقم الأساسي).
+3) باسم الكاتب + الموضوع.
+4) باسم الجريدة + الموضوع + التاريخ.
+5) في وكالات الأنباء (رويترز، أسوشيتد برس، فرانس برس) والجرايد اللي نقلت عن الخبر أو اقتبست منه.
+واكتب لكل خبر مهم سطر: [لقيته كامل / لقيت ملخص من مصدر تاني / ملقيتوش] + الرابط اللي لقيته فيه. ماتحللش خبر من مقتطفه كأنك قريته كله، وماتعدّيش أي جدار اشتراك: استخدم بس النسخ المنشورة للكل."""
+
+
+def timeline_block(items, indent=""):
+    """قايمة الأخبار + تنبيه الذكاء الاصطناعي إن دي مقتطفات ولازم يدوّر على الخبر كامل"""
+    lines = item_lines(items, indent)
+    return "\n".join(lines) + ("\n\n" + EXCERPT_RULE if any(it.get("kind") == "خبر" for it in items) else "")
+
+
+PROMPT = """أنت محلل أخبار. حلل {scope} ده بالمعلومات اللي تحت، وما تضيفش أي حدث أو تصريح أو رقم مش موجود فيها، إلا النص الكامل للأخبار دي لو لقيته (قول مصدره).
 
 {scope}: {name}
 الفترة: من {first} لحد {last}
@@ -431,7 +459,7 @@ def prompt_for(scope, g, max_items=40):
         us_block = ("الزاوية الأمريكية (تصريحات وتحركات ترامب وأمريكا في الملف ده):\n"
                     + "\n".join(item_lines(g["us_items"][-15:])) + "\n\n")
     return PROMPT.format(scope=scope, name=g["name"], first=g["first"], last=g["last"], note=note,
-                         timeline="\n".join(item_lines(shown)), us_block=us_block)
+                         timeline=timeline_block(shown), us_block=us_block)
 
 
 EGYPT_PERSP = """المنظور (مهم جداً): الإسكريبت ده بيتكتب من وجهة نظر مصرية وعربية، لجمهور مصري وعربي، مش من وجهة نظر الإعلام الغربي. ده معناه:
@@ -534,7 +562,7 @@ def script_prompt(scope, g, minutes=5, max_items=40, egypt=True):
         us_block = ("الزاوية الأمريكية (تصريحات وتحركات ترامب وأمريكا في الملف ده):\n"
                     + "\n".join(item_lines(g["us_items"][-15:])) + "\n\n")
     return SCRIPT_PROMPT.format(name=g["name"], first=g["first"], last=g["last"], note=note,
-                                timeline="\n".join(item_lines(shown)), us_block=us_block,
+                                timeline=timeline_block(shown), us_block=us_block,
                                 minutes=minutes, words=int(minutes) * 140, persp=_persp(egypt)[0])
 
 
@@ -600,7 +628,7 @@ def script_prompt2(scope, g, minutes=5, max_items=40, egypt=True):
                     + "\n".join(item_lines(g["us_items"][-15:])) + "\n\n")
     pe, nm = _persp(egypt)
     return SCRIPT_PROMPT_2.format(name=g["name"], first=g["first"], last=g["last"], note=note,
-                                  timeline="\n".join(item_lines(shown)), us_block=us_block,
+                                  timeline=timeline_block(shown), us_block=us_block,
                                   minutes=minutes, words=int(minutes) * 140, persp=pe, naming=nm.lstrip("- "))
 
 
@@ -668,7 +696,7 @@ def script_prompt3(scope, g, minutes=5, view="", max_items=40, egypt=True):
     view_block = f"وجهة نظري المبدئية (ابني عليها لو الأدلة بتسندها، ولو بتعاكسها قولي بصراحة):\n{view.strip()}\n\n" if (view or "").strip() else ""
     pe, nm = _persp(egypt, national=True)
     return SCRIPT_PROMPT_3.format(name=g["name"], first=g["first"], last=g["last"], note=note,
-                                  timeline="\n".join(item_lines(shown)), us_block=us_block, view_block=view_block,
+                                  timeline=timeline_block(shown), us_block=us_block, view_block=view_block,
                                   minutes=minutes, words=int(minutes) * 140, persp=pe, naming=nm)
 
 
@@ -706,7 +734,7 @@ def explain_prompt(scope, g, max_items=40):
     shown = g["items"][-max_items:]
     note = f"(الأحدث بس: آخر {max_items} من {len(g['items'])} عنصر)\n" if len(g["items"]) > max_items else ""
     return EXPLAIN_PROMPT.format(name=g["name"], first=g["first"], last=g["last"], note=note,
-                                 timeline="\n".join(item_lines(shown)))
+                                 timeline=timeline_block(shown))
 
 
 EG_SCRIPT_PROMPT = """انت كاتب اسكريبت فيديو مصري، بتحكي لجمهور مصري وعربي عن شأن داخلي في مصر، بعامية قاهرية حية زي قاعد على قهوة بلدي. مش بتنقل الخبر وبس: بتفهّم الناس "ده معناه إيه ليك" وبتقرا المشهد بعقلك.
@@ -743,7 +771,7 @@ def eg_script_prompt(g, minutes=8, max_items=40):
     shown = g["items"][-max_items:]
     note = f"(الأحدث بس: آخر {max_items} من {len(g['items'])} عنصر)\n" if len(g["items"]) > max_items else ""
     return EG_SCRIPT_PROMPT.format(name=g["name"], first=g["first"], last=g["last"], n_src=len(g["sources"]), n_items=len(g["items"]),
-                                   minutes=minutes, words=int(minutes * 130), note=note, timeline="\n".join(item_lines(shown)))
+                                   minutes=minutes, words=int(minutes * 130), note=note, timeline=timeline_block(shown))
 
 
 TOPIC_PROMPT = """انت صحفي مصري محقق وبتفهم في الاقتصاد والمجتمع والسياسة، وبتحلل لجمهور مصري وعربي بعامية قاهرية بسيطة وواضحة.
@@ -787,7 +815,7 @@ def topic_prompt(g, max_items=50):
     countries = (" · دول المصادر: " + "، ".join(f"{c} ({n})" for c, n in cs.most_common(6))) if cs else ""
     return TOPIC_PROMPT.format(name=g["name"], first=g["first"], last=g["last"], n_src=len(g["sources"]),
                                n_items=len(g["items"]), countries=countries, note=note,
-                               timeline="\n".join(item_lines(shown)))
+                               timeline=timeline_block(shown))
 
 
 def briefing_md(res, limit=300):

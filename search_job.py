@@ -204,6 +204,21 @@ def main():
             print("status save failed", e, flush=True)
 
     def save_result(key, data):
+        # محاولة تانية لترجمة العناوين اللي فضلت بلغتها (خدمة الترجمة ساعات بترفض لما الطلبات تكتر)
+        bad = [a for a in (data.get("items") or [])[:200] if a.get("title") and not core._HAS_AR.search(a.get("title_ar") or "")
+               and not core._HAS_AR.search(a.get("title") or "")]
+        if bad:
+            time.sleep(5)
+            try:
+                core.translate_titles(bad)
+            except Exception as e:
+                print("retry translate failed", e, flush=True)
+        # مقتطف قصير من صفحة الخبر للأخبار اللي جت من غير مقتطف (الوصف العلني اللي الموقع بينشره للمشاركة)
+        try:
+            n_t = core.add_teasers((data.get("items") or [])[:200], limit=60)
+            print(f"{key}: جبنا مقتطف لـ {n_t} خبر", flush=True)
+        except Exception as e:
+            print("teasers failed", e, flush=True)
         data = {**data, "partial": False, "saved_at": now_iso(), "job": True, "job_terms": terms}
         body = json.loads(json.dumps(data, ensure_ascii=False, default=str))
         body["items"] = body.get("items", [])[:200]

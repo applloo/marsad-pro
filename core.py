@@ -447,6 +447,65 @@ _LD_BODY = re.compile(r'"articleBody"\s*:\s*"((?:[^"\\]|\\.){80,})"', re.S)
 _META_DESC = re.compile(r'<meta[^>]+(?:property|name)=["\'](?:og:description|description|twitter:description)["\'][^>]*content=["\']([^"\']{80,})', re.I)
 
 
+_META_DESC2 = re.compile(r'<meta[^>]+content=["\']([^"\']{60,})["\'][^>]*(?:property|name)=["\'](?:og:description|description|twitter:description)["\']', re.I)
+_META_DESC_ANY = re.compile(r'<meta[^>]+(?:property|name)=["\'](?:og:description|description|twitter:description)["\'][^>]*content=["\']([^"\']{60,})', re.I)
+_TEASER_CACHE = {}
+
+
+def fetch_teaser(url, timeout=8):
+    """مقتطف قصير من الصفحة: الوصف اللي الموقع نفسه بينشره للمشاركة (og:description). ده كلام علني حتى في المواقع
+    اللي بالاشتراك، ومش بنعدّي أي جدار اشتراك. بيرجع "" لو مفيش."""
+    if not url or url in _TEASER_CACHE:
+        return _TEASER_CACHE.get(url, "")
+    if not is_safe_url(url) or _host(url) == "news.google.com":
+        return ""
+    txt = ""
+    try:
+        r = requests.get(url, headers=UA, timeout=timeout, stream=True, allow_redirects=True)
+        if r.status_code < 400 and "html" in (r.headers.get("Content-Type") or "html").lower():
+            chunk = b""
+            for part in r.iter_content(16384):
+                chunk += part
+                if len(chunk) > 250_000 or b"</head>" in chunk.lower():
+                    break
+            page = chunk.decode(r.encoding or "utf-8", errors="ignore")
+            m = _META_DESC_ANY.search(page) or _META_DESC2.search(page)
+            txt = _html.unescape(m.group(1)).strip()[:700] if m else ""
+        r.close()
+    except Exception:
+        txt = ""
+    _TEASER_CACHE[url] = txt
+    return txt
+
+
+def has_snippet(a):
+    """الكارت فيه مقتطف حقيقي ولا لأ"""
+    if a.get("teaser") or a.get("snip_ar") or a.get("snippet") or a.get("description"):
+        return True
+    return bool(a.get("summary_ar")) and a.get("summary_status") in ("translated_snippet", "page_teaser")
+
+
+def add_teasers(items, limit=60, workers=8):
+    """بيجيب مقتطف من الصفحة للأخبار اللي مالهاش مقتطف (أول limit بس) ويترجمه. بيرجع عدد اللي اتجاب"""
+    from concurrent.futures import ThreadPoolExecutor
+    todo = [a for a in items if isinstance(a, dict) and a.get("url") and not has_snippet(a)][:limit]
+    if not todo:
+        return 0
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        got = list(ex.map(lambda a: fetch_teaser(a["url"]), todo))
+    pairs = [(a, t) for a, t in zip(todo, got) if t]
+    if not pairs:
+        return 0
+    ar = _batch_tr([t for _a, t in pairs], "ar")
+    for (a, t), t_ar in zip(pairs, ar):
+        a["teaser"] = t
+        if t_ar and (_HAS_AR.search(t_ar) or _HAS_AR.search(t)):
+            a["summary_ar"], a["summary_status"] = t_ar, "page_teaser"
+        else:
+            a["summary_ar"], a["summary_status"] = t, "page_teaser_untranslated"
+    return len(pairs)
+
+
 def _fallback_text(html_text):
     """عند فشل الاستخراج العادي: articleBody في JSON-LD ثم وصف الصفحة"""
     m = _LD_BODY.search(html_text)

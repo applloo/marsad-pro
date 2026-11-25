@@ -12,7 +12,7 @@ API = "https://api.github.com/gists/"
 
 def empty():
     return {"saved": [], "sources": [], "writers": [], "keys": [], "watch_topics": "", "posts": [],
-            "custom_dossiers": [], "custom_threads": [], "analysis_cases": [], "research_cases": [], "case_links": [], "early_warning": {"baselines": {}, "reports": [], "last_scan": ""}, "scenario_worksheets": [], "analysis_packages": [], "ai_usage": [], "billing_reservations": [], "ai_results": [], "content_jobs": [], "content_results": [], "prompt_library": [], "prompt_chains": [], "prompt_bundles": [], "source_health_runs": [], "intel_dossiers": [], "intel_case_files": [], "intel_reports": [], "job_tasks": [], "research_batches": [], "video_projects": [], "ai_settings": {}, "outlet_profiles": {}, "writer_profiles": {}}
+            "custom_dossiers": [], "custom_threads": [], "analysis_cases": [], "research_cases": [], "case_links": [], "early_warning": {"baselines": {}, "reports": [], "last_scan": ""}, "scenario_worksheets": [], "analysis_packages": [], "ai_usage": [], "billing_reservations": [], "ai_results": [], "content_jobs": [], "content_results": [], "prompt_library": [], "prompt_chains": [], "prompt_bundles": [], "source_health_runs": [], "intel_dossiers": [], "intel_case_files": [], "intel_reports": [], "job_tasks": [], "research_batches": [], "video_projects": [], "ai_settings": {}, "outlet_profiles": {}, "writer_profiles": {}, "basket": []}
 
 
 def normalize(data):

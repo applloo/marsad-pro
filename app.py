@@ -104,6 +104,14 @@ def _ar_name(label):
         return label
 
 
+def src_plain(domain):
+    """اسم الجريدة بالعربي وبلدها كنص عادي (من غير HTML) عشان يتحط في البرومبتات"""
+    try:
+        return about_plain(re.sub(r"<[^>]+>", "", html.unescape(src_label(domain, with_domain=False))).split("·")[0]).strip() or domain
+    except Exception:
+        return domain
+
+
 def src_label(domain, with_domain=True):
     """«اسم المصدر بالعربية · 🏳️ دولته» — يُستخدم في كل مكان يظهر فيه مصدر. لا يُسقط الصفحة أبداً"""
     try:
@@ -120,7 +128,7 @@ def src_label(domain, with_domain=True):
         return html.escape(str(domain or "")) + f" (تعذّر تحديد الدولة: {type(e).__name__})"
 
 
-APP_VERSION = "9.0"  # بيزيد مع كل نسخة جديدة
+APP_VERSION = "9.3"  # بيزيد مع كل نسخة جديدة
 st.set_page_config(page_title="Marsad | مركز الرصد والتحليل", page_icon="🔷", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown(
@@ -420,6 +428,23 @@ def translate_proxy_url(url, tl="ar"):
     return f"https://{host}.translate.goog{s.path or '/'}?{q}"
 
 
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def frame_blocked(url):
+    """بنسأل الموقع قبل ما نعرض الإطار: لو قافل العرض جوه مواقع تانية (X-Frame-Options أو CSP) الإطار كان بيطلع فاضي"""
+    try:
+        import requests
+        r = requests.get(url, timeout=8, stream=True, headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=True)
+        xfo = (r.headers.get("X-Frame-Options") or "").lower()
+        csp = (r.headers.get("Content-Security-Policy") or "").lower()
+        r.close()
+        if xfo in ("deny", "sameorigin") or "sameorigin" in xfo or "deny" in xfo:
+            return True
+        m = re.search(r"frame-ancestors([^;]*)", csp)
+        return bool(m and ("'none'" in m.group(1) or ("'self'" in m.group(1) and "*" not in m.group(1))))
+    except Exception:
+        return False  # لو مقدرناش نسأل، نجرّب نعرضه عادي
+
+
 def embed_browser(url):
     """فتح الصفحة الأصلية مترجمة: أزرار تاب جديد (الأضمن) + إطار داخلي اختياري"""
     import streamlit.components.v1 as components
@@ -432,6 +457,9 @@ def embed_browser(url):
         if st.checkbox("جرّب عرضها داخل هذه الصفحة (قد لا يعمل مع بعض المواقع)", key="emb_on"):
             mode = st.radio("العرض", ["مترجمة للعربية", "الأصلية بلغتها"], horizontal=True, key="emb_mode")
             src = translate_proxy_url(url) if mode.startswith("مترجمة") else url
+            if frame_blocked(src):
+                st.warning("🚫 الموقع ده بيمنع عرض صفحاته جوه مواقع تانية، فالإطار هيطلع فاضي. افتحها من الزرارين اللي فوق.")
+                return
             components.html(
                 f"<iframe src='{html.escape(src, quote=True)}' style='width:100%;height:690px;border:1px solid #334155;border-radius:8px;background:#fff' "
                 "referrerpolicy='no-referrer'></iframe>", height=700, scrolling=False)
@@ -589,7 +617,15 @@ def reader_page():
         if core._host(real) != "news.google.com":
             url, gnews_link = real, False
     st.markdown(f"🔗 **الرابط الأصلي:** [{html.escape(url)}]({url})")
+    if st.query_params.get("k"):
+        st.caption("🔐 لو عايز تبعت المقال لحد، ابعتله «الرابط الأصلي» اللي فوق، مش رابط الصفحة دي (رابط الصفحة فيه رمز دخولك).")
     reader_head(orig_title, url, wr, outlet)
+    _bk_item = {"url": url, "title": orig_title or core.title_from_url(url), "title_ar": tr(orig_title, "auto", "ar") if orig_title else "",
+                "domain": core._host(url), "seendate": seen, "writer": wr, "outlet": outlet}
+    _b1, _b2 = st.columns([2, 3])
+    basket_button(_b1, _bk_item, "reader", "reader")
+    _b2.caption(f"🧺 في السلة دلوقتي {len(basket())} مقال. اقرا المقال الأول، ولو يستاهل ضيفه، وبعدين من التاب الأصلي روح «الملفات والأرشيف ← سلة المقالات»."
+                + ("" if PERSIST else " (في النسخة التجريبية السلة مابتتحفظش بين الصفحات.)"))
 
     embed_browser(url)
 
@@ -727,13 +763,29 @@ def _sec(name):
 
 
 ADMIN_KEY, _GT, _GG = _sec("ADMIN_KEY"), _sec("GITHUB_TOKEN"), _sec("GIST_ID")
-GATE_ON = bool(ADMIN_KEY and _GT and _GG)
+GATE_ON = bool(ADMIN_KEY and _GT and _GG)  # الدعوات (شفرات الضيوف) محتاجة الـGist
+# لو ADMIN_KEY مش موجود التطبيق مايتفتحش لحد (قفل آمن)، إلا لو كتبت صراحةً ALLOW_OPEN_MODE = "yes" في Secrets
+OPEN_MODE = (not ADMIN_KEY) and str(_sec("ALLOW_OPEN_MODE") or "").strip().lower() in ("yes", "true", "1")
+ADMIN_TOKEN_DAYS = 14  # رمز دخول المالك اللي في الرابط بيبطل لوحده بعد المدة دي (ويتجدد مع كل فتح)
+
+
+def _adm_sig(day):
+    import hashlib
+    return hmac.new((ADMIN_KEY or "").encode("utf-8"), f"marsad-admin|{day}".encode("utf-8"), hashlib.sha256).hexdigest()[:32]
 
 
 def _adm_tok():
-    """رمز جلسة المالك المشتق من ADMIN_KEY (لا يكشف المفتاح نفسه): يوضع في الرابط فيُعاد الدخول تلقائياً بعد انقطاع الجلسة"""
-    import hashlib
-    return hashlib.sha256(("marsad-session|" + (ADMIN_KEY or "")).encode("utf-8")).hexdigest()[:40]
+    """رمز جلسة المالك: موقّع ومؤقت (14 يوم). لو حد خد رابط فيه الرمز بالغلط، بيبطل لوحده"""
+    day = int(time.time() // 86400) + ADMIN_TOKEN_DAYS
+    return f"a{day}.{_adm_sig(day)}"
+
+
+def _adm_tok_ok(code):
+    m = re.fullmatch(r"a(\d{5,6})\.([0-9a-f]{32})", code or "")
+    if not (m and ADMIN_KEY):
+        return False
+    day = int(m.group(1))
+    return day >= int(time.time() // 86400) and hmac.compare_digest(m.group(2), _adm_sig(day))
 
 
 def auth_qs():
@@ -747,9 +799,11 @@ def _try_code(code):
     code = (code or "").strip()
     if not code:
         return ""
-    if hmac.compare_digest(code, ADMIN_KEY) or hmac.compare_digest(code, _adm_tok()):
+    if ADMIN_KEY and (hmac.compare_digest(code, ADMIN_KEY) or _adm_tok_ok(code)):
         st.session_state["auth"] = {"role": "admin", "token": _adm_tok()}
         return ""
+    if not GATE_ON:
+        return "الشفرة غير صحيحة."  # من غير Gist مفيش دعوات ضيوف، المالك بس
     try:
         k, why = keys_mod.touch(_GT, _GG, code)
     except Exception as e:
@@ -764,9 +818,18 @@ def _try_code(code):
 
 def gate():
     ss = st.session_state
-    if not GATE_ON:
+    if OPEN_MODE:  # وضع مفتوح اختاره المالك صراحة (للتجربة على جهازه بس)
         ss["auth"] = {"role": "admin", "token": ""}
         return
+    if not ADMIN_KEY:  # قفل آمن: الإعدادات ناقصة، فمحدش يدخل بدل ما الإدارة تتفتح للكل
+        show_logo()
+        st.title("🔒 التطبيق مقفول لحد ما الإعدادات تكمل")
+        st.warning("مفيش ADMIN_KEY في Secrets بتاعة ستريمليت، فالتطبيق اتقفل للأمان بدل ما يفتح وضع الإدارة لأي حد معاه الرابط.")
+        st.markdown("**الحل:** من صفحة التطبيق على Streamlit ← ⋮ ← Settings ← Secrets، ضيف سطر زي ده وبعدين Save:\n\n"
+                    "`ADMIN_KEY = \"كلمة-سر-طويلة-تخصك\"`\n\nومعاه `GITHUB_TOKEN` و`GIST_ID` عشان الحفظ والدعوات.")
+        st.caption("تشخيص: " + " · ".join(f"{n}: {'✅ موجود' if v else '❌ ناقص'}" for n, v in
+                                          (("ADMIN_KEY", ADMIN_KEY), ("GITHUB_TOKEN", _GT), ("GIST_ID", _GG))))
+        st.stop()
     a = ss.get("auth")
     msg = ""
     if a and a["role"] == "guest":
@@ -814,9 +877,6 @@ def gate():
 gate()
 IS_ADMIN = st.session_state["auth"]["role"] == "admin"
 
-if "view" in st.query_params:
-    reader_page()
-    st.stop()
 
 # ───────────────────────── التخزين: المحفوظات + المصادر المضافة ─────────────────────────
 
@@ -876,6 +936,66 @@ def persist():
     except Exception as e:
         st.session_state["store_err"] = f"تعذّر الحفظ الدائم ({type(e).__name__})"
         return False
+
+
+BASKET_MAX = 25
+BASKET_KEEP = ("url", "title", "title_ar", "title_en", "domain", "seendate", "writer", "outlet", "author", "summary_ar",
+               "snip_ar", "snippet", "description", "language", "sourcecountry", "ctype")
+
+
+def _bk_id(url):
+    return "bk_" + hashlib.sha1(str(url).encode("utf-8")).hexdigest()[:14]
+
+
+def basket():
+    """سلة المقالات: بتجمع مقالات من أي مكان في التطبيق (أي تاب، المحفوظات، صفحة القراءة) عشان تعمل لها برومبت واحد"""
+    return S().setdefault("basket", [])
+
+
+def in_basket(url):
+    return any(x.get("url") == url for x in basket())
+
+
+def basket_toggle(a, src=""):
+    url = a.get("url", "")
+    if not url:
+        return
+    b = basket()
+    if in_basket(url):
+        S()["basket"] = [x for x in b if x.get("url") != url]
+    elif len(b) < BASKET_MAX:
+        b.append({**{k: a[k] for k in BASKET_KEEP if a.get(k)}, "id": _bk_id(url), "from_tab": globals().get("TAB_LABELS", {}).get(src, src),
+                  "added": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+    else:
+        st.session_state["flash"] = f"السلة فيها {BASKET_MAX} مقال (الحد الأقصى). شيل حاجة الأول."
+    persist()
+
+
+def go_basket():
+    st.session_state["nav_main"] = "library"
+    st.session_state["nav_sub_library"] = "basket"
+
+
+def basket_button(container, a, src, wkey):
+    """زرار ضيف/شيل من السلة جنب أي مقال"""
+    inb = in_basket(a.get("url", ""))
+    container.button("✅ في السلة (دوس تشيله)" if inb else "🧺 ضيفه للسلة (لسكريبت أو ربط)", key=f"bk_{wkey}",
+                     on_click=basket_toggle, args=(a, src), use_container_width=True)
+
+
+def basket_bar(where):
+    """سطر صغير بيقول في السلة كام مقال، وزرار يوديك لها"""
+    n = len(basket())
+    if n:
+        c1, c2 = st.columns([3, 1])
+        c1.info(f"🧺 في السلة {n} مقال. لما تخلّص اختيار، روح السلة تعمل لهم برومبت سكريبت أو ربط.")
+        c2.button("🧺 روح للسلة", key=f"gobk_{where}", on_click=go_basket, use_container_width=True)
+
+
+# صفحة قراءة المقال: بعد تحميل التخزين، عشان زرار «ضيفه للسلة» يشتغل جواها
+if "view" in st.query_params:
+    reader_page()
+    st.stop()
 
 
 def dispatch_tracked(workflow, label, dispatch_fn, *args):
@@ -1396,7 +1516,7 @@ SUB_SECTIONS = {
                "paid": "🧾 رادار التقارير المدفوعة", "gd": "🌐 بحث GDELT"},
     "intel": {"wr": "✍️ كتّاب ومحللون", "in": "🛰️ مكتب الاستخبارات", "health": "🩺 صحة المصادر",
               "clusters": "🧩 تجميع الأحداث والروايات", "entities": "🧭 الكيانات والتناقضات"},
-    "library": {"dos": "🧵 الملفات والخيوط", "sv": "📌 المحفوظات", "lab": "🧠 ورشة التحليل"},
+    "library": {"dos": "🧵 الملفات والخيوط", "basket": "🧺 سلة المقالات والسكريبت", "sv": "📌 المحفوظات", "lab": "🧠 ورشة التحليل"},
 }
 
 
@@ -1617,9 +1737,12 @@ def card_html(a):
         if a.get("writer")
         else ""
     )
+    ar_ok = bool(core._HAS_AR.search(a.get("title_ar") or "")) and (a.get("title_ar") or "").strip() != (a.get("title") or "").strip()
+    head = (f"<div class='ar-title'>{html.escape(a.get('title_ar', ''))}</div><div class='ltr' dir='ltr'>{orig}</div>" if ar_ok else
+            (f"<div class='ar-title'>{orig}</div>" if core._HAS_AR.search(a.get("title") or "") else
+             f"<div class='ltr' dir='ltr' style='font-size:1.05rem;font-weight:700'>{orig}</div><div class='meta'>⏳ العنوان لسه مش مترجم (خدمة الترجمة كانت مشغولة)</div>"))
     return (
-        f"<div class='ar-title'>{html.escape(a.get('title_ar', ''))}</div>"
-        f"<div class='ltr' dir='ltr'>{orig}</div>{en_line}"
+        head + f"{en_line}"
         f"<div class='meta'>🕒 {fmt_seen(a.get('seendate', ''))} (القاهرة)<br>{wline}"
         f"🌐 المصدر: {src}"
         + (f" · 🧭 {html.escape(a['country_ar'])}" if a.get("side") and a.get("country_ar") else "")
@@ -1727,16 +1850,40 @@ def render_results(key):
         with st.container(border=True):
             st.markdown(card_html(a), unsafe_allow_html=True)
             _article_key = key + "_" + hashlib.sha256(str(url or f"{key}_{i}").encode("utf-8")).hexdigest()[:12] + f"_{i}"  # فيه اسم التاب ورقم الكارت عشان مايتكررش
-            st.checkbox("☑️ ضمّ المقال إلى البرومبت التحليلي الجماعي", key=f"script_pick_{_article_key}")
-            _act1, _act2 = st.columns(2)
-            if _act1.button("🎬 توليد برومبت سكريبت لهذا المقال", key=f"script_one_{_article_key}", use_container_width=True):
-                st.session_state["article_prompt_active"] = {"title": a.get("title_ar") or a.get("title") or "مقال", "prompt": article_script_prompts_mod.build_script_prompt([a])}
+            _act0, _act1, _act3, _act2 = st.columns(4)
+            basket_button(_act0, a, key, _article_key)
+            if _act3.button("🔎 برومبت: دوّر على الخبر كامل", key=f"find_one_{_article_key}", use_container_width=True):
+                st.session_state["article_prompt_active"] = {"url": url, "title": a.get("title_ar") or a.get("title") or "خبر",
+                                                             "prompt": article_script_prompts_mod.build_find_prompt([{**a, "outlet": src_plain(a.get("domain", ""))}])}
+            if _act1.button("🎬 برومبت سكريبت للمقال ده", key=f"script_one_{_article_key}", use_container_width=True):
+                st.session_state["article_prompt_active"] = {"url": url, "title": a.get("title_ar") or a.get("title") or "مقال",
+                                                             "prompt": article_script_prompts_mod.build_script_prompt([a])}
             if _act2.button("🔎 بدائل مجانية مفتوحة", key=f"alt_one_{_article_key}", use_container_width=True):
-                st.session_state["article_alt_active"] = {"title": a.get("title_ar") or a.get("title") or "مقال", "links": article_script_prompts_mod.alternative_search_links(a)}
-            if a.get("summary_ar"):
-                st.markdown("**📝 ملخص/مقتطف مترجم:** " + a["summary_ar"])
-                if a.get("summary_status") != "translated_snippet":
-                    st.caption("حالة الملخص: " + str(a.get("summary_status")))
+                st.session_state["article_alt_active"] = {"url": url, "title": a.get("title_ar") or a.get("title") or "مقال", "links": article_script_prompts_mod.alternative_search_links(a)}
+            _ap = st.session_state.get("article_prompt_active") or {}
+            if _ap.get("url") == url:
+                with st.expander("🧠 البرومبت الجاهز للمقال ده (انسخه من زرار النسخ فوق على اليمين)", expanded=True):
+                    st.caption("لو عايز تقرا المقال كله الأول وتربطه بمقالات تانية، ضيفه للسلة.")
+                    st.code(_ap["prompt"], language=None)
+            _alt = st.session_state.get("article_alt_active") or {}
+            if _alt.get("url") == url:
+                with st.expander("🔎 مسارات البحث عن تغطيات مفتوحة بديلة", expanded=True):
+                    st.caption("روابط بحث قانونية عن تغطيات مستقلة أو مقابلات أو تصريحات أصلية. مش بتضمن نسخة مجانية من التقرير المدفوع.")
+                    for _lnk in _alt.get("links", []):
+                        st.markdown(f"**{_lnk['label']}**  ·  [Google]({_lnk['google']})  ·  [Google News]({_lnk['news']})")
+            _sst = a.get("summary_status")
+            if a.get("summary_ar") and _sst not in ("missing_snippet",):
+                _lbl = {"page_teaser": "📝 مقتطف من صفحة الخبر (مترجم):", "page_teaser_untranslated": "📝 مقتطف من صفحة الخبر:"}.get(_sst, "📝 ملخص/مقتطف مترجم:")
+                st.markdown(f"**{_lbl}** " + a["summary_ar"])
+                if _sst not in ("translated_snippet", "page_teaser", "page_teaser_untranslated", "teaser_missing", None):
+                    st.caption("حالة الملخص: " + str(_sst))
+            elif not core.has_snippet(a) and url:
+                if st.button("📝 هات مقتطف من صفحة الخبر", key=f"teaser_{_article_key}"):
+                    with st.spinner("بنجيب المقتطف…"):
+                        n_t = core.add_teasers([a], limit=1)
+                    if not n_t:
+                        a["summary_ar"], a["summary_status"] = "الموقع مانشرش وصف للخبر ده. افتح «ترجم المقال».", "teaser_missing"
+                    st.rerun()
             if a.get("checked"):
                 if not a.get("fetched"):
                     st.caption("ℹ️ تعذّر فحص نص المقال (قد يكون خلف اشتراك أو يحجب الزحف).")
@@ -1759,28 +1906,7 @@ def render_results(key):
                 st.caption("✅ محفوظ — تجده في تاب «المحفوظات»")
             else:
                 st.button("💾 حفظ للقراءة لاحقاً", key=f"save_{key}_{i}", on_click=save_item, args=(a, key))
-    _selected_articles = []
-    for _idx, _article in enumerate(view_items[:n_show]):
-        _u = _article.get("url", "")
-        _ak = key + "_" + hashlib.sha256(str(_u or f"{key}_{_idx}").encode("utf-8")).hexdigest()[:12] + f"_{_idx}"
-        if st.session_state.get(f"script_pick_{_ak}"):
-            _selected_articles.append(_article)
-    if _selected_articles:
-        st.info(f"تم اختيار {len(_selected_articles)} مقال/مقالات للبرومبت الجماعي.")
-        if st.button(f"🧠 توليد برومبت تحليلي وسكريبت للمقالات المحددة ({len(_selected_articles)})", key=f"script_many_{key}", use_container_width=True):
-            st.session_state["article_prompt_active"] = {"title": f"تحليل مجموعة من {len(_selected_articles)} مواد", "prompt": article_script_prompts_mod.build_script_prompt(_selected_articles)}
-    _active_prompt = st.session_state.get("article_prompt_active")
-    if _active_prompt:
-        with st.expander("🧠 البرومبت الجاهز للإرسال إلى الذكاء الاصطناعي", expanded=True):
-            st.caption(_active_prompt.get("title", "برومبت تحليلي"))
-            st.text_area("راجع البرومبت وانسخه إلى ChatGPT أو أي نموذج آخر", _active_prompt["prompt"], height=360, key=f"article_prompt_text_{key}")
-            st.download_button("⬇️ تنزيل البرومبت TXT", _active_prompt["prompt"], file_name="marsad_article_script_prompt.txt", mime="text/plain", key=f"article_prompt_dl_{key}")
-    _active_alt = st.session_state.get("article_alt_active")
-    if _active_alt:
-        with st.expander("🔎 مسارات البحث عن تغطيات مفتوحة بديلة", expanded=True):
-            st.caption("هذه روابط بحث قانونية عن تغطيات مستقلة أو مقابلات أو تصريحات أصلية. لا تضمن وجود نسخة مجانية مكافئة للتقرير المدفوع.")
-            for _lnk in _active_alt.get("links", []):
-                st.markdown(f"**{_lnk['label']}**  ·  [Google]({_lnk['google']})  ·  [Google News]({_lnk['news']})")
+    basket_bar(key)
     if total_items > n_show:
         st.caption(f"معروض {n_show} من {total_items} نتيجة (بنعرضهم على دفعات عشان الصفحة تفضل خفيفة).")
         if st.button(f"⬇️ اعرض 20 كمان (باقي {total_items - n_show})", key=f"morebtn_{key}", use_container_width=True):
@@ -2145,15 +2271,28 @@ def render_home():
             bar.empty()
     h = st.session_state.get("res_home")
     now_utc0 = datetime.now(timezone.utc).strftime("%Y%m%d")
-    all_items = [a for k in HOME_SECTIONS for a in (st.session_state.get(f"res_{k}") or {}).get("items", [])]
+    _seen_u, all_items = set(), []
+    for k in HOME_SECTIONS:
+        for a in (st.session_state.get(f"res_{k}") or {}).get("items", []):
+            u = (a.get("url") or "").split("?")[0].rstrip("/")
+            if u and u not in _seen_u:  # نفس الخبر في قسمين بيتعد مرة واحدة
+                _seen_u.add(u)
+                all_items.append(a)
     today_n = sum(1 for a in all_items if str(a.get("seendate", "")).startswith(now_utc0))
-    n_src = len({d for g in (ISRAEL, USA, UK, REGION, ARABIC, EGYPT) for ents in g.values() for _, d, _ in ents})
-    case_store = S().get("intel_case_files", {})
-    active_cases = len(case_store) if isinstance(case_store, dict) else 0
+    n_src = len({d for g in (ISRAEL, USA, UK, REGION, ARABIC, EGYPT) for ents in g.values() for _, d, _ in ents}
+                | {x.get("domain") for x in S().get("sources", []) if x.get("domain")})
+    n_files = len(S().get("research_cases") or []) + len(S().get("intel_case_files") or []) + len(S().get("intel_dossiers") or [])
     metrics = st.columns(4)
-    for col, num, lab in zip(metrics, (today_n, len(all_items), active_cases, n_src),
-                             ("نتائج مرصودة اليوم", "نتائج البحث المحفوظة", "ملفات القضايا التراكمية", "مصدر في كتالوج الرصد")):
-        col.markdown(f"<div class='hm-stat'><span style='color:#aebfd8;font-size:.88rem'>{lab}</span><b>{num:,}</b></div>", unsafe_allow_html=True)
+    stats = ((today_n, "أخبار اتنشرت النهارده", "من نتايج البحث اللي في الأقسام دلوقتي، اللي تاريخ نشرها النهارده (بتوقيت جرينتش)."),
+             (len(all_items), "أخبار في نتايج الأقسام", "كل نتايج البحث المحمّلة في الأقسام دلوقتي، والخبر المكرر في أكتر من قسم بيتعد مرة. ده غير «المحفوظات» اللي انت حفظتها بنفسك."),
+             (n_files, "ملفات بحث وقضايا", "ملفات القضايا البحثية + السجلات التراكمية + ملفات تجميع الأحداث المحفوظة."),
+             (n_src, "مصدر بيتراقب", "مصادر الكتالوج الأساسية + المصادر اللي انت ضفتها بنفسك (من غير تكرار)."))
+    for col, (num, lab, tip) in zip(metrics, stats):
+        col.markdown(f"<div class='hm-stat' title='{html.escape(tip, quote=True)}'><span style='color:#aebfd8;font-size:.88rem'>{lab}</span><b>{num:,}</b></div>", unsafe_allow_html=True)
+    with st.expander("ℹ️ الأرقام دي معناها إيه؟"):
+        for _n, lab, tip in stats:
+            st.markdown(f"- **{lab}:** {tip}")
+    basket_bar("home")
     st.markdown("<div style='display:flex;align-items:center;justify-content:space-between;margin:24px 0 10px'><h3 style='margin:0'>آخر ما تم رصده</h3><span style='color:#41d8e9;font-size:.82rem'>MONITORING FEED</span></div>", unsafe_allow_html=True)
     if h:
         cnt = " · ".join(f"{HOME_SECTIONS[k][0]}: {n}" for k, n in h.get("counts", {}).items())
@@ -2166,9 +2305,16 @@ def render_home():
             st.caption("أحدث النتائج المتاحة من عمليات البحث المحفوظة في الجلسة.")
         else:
             st.info("لا توجد نتائج محفوظة في الجلسة حالياً. اكتب موضوعاً بالأعلى لبدء البحث الشامل، أو افتح البحث والرصد من القائمة الجانبية.")
+    _todo = [x for x in display_items if x.get("url") not in st.session_state.setdefault("_home_tr_tried", set())]
+    if _todo and untranslated(_todo) and time.time() > st.session_state.get("tr_down_until", 0):
+        with st.spinner("بنترجم العناوين اللي لسه مش مترجمة…"):
+            if not fix_untranslated(_todo, limit=25):
+                st.session_state["tr_down_until"] = time.time() + 180
+        st.session_state["_home_tr_tried"].update(x.get("url") for x in _todo)
     for a in display_items:
         sec = HOME_SECTIONS.get(a.get("_sec"), ("", None, "", "#315b85"))
-        ttl = html.escape(a.get("title_ar") or a.get("title") or "عنوان غير متاح")
+        _ar = a.get("title_ar") if core._HAS_AR.search(a.get("title_ar") or "") else ""
+        ttl = html.escape(_ar or a.get("title") or "عنوان غير متاح") + ("" if _ar or core._HAS_AR.search(a.get("title") or "") else " <small>⏳ لسه مش مترجم</small>")
         url = html.escape(a.get("url", ""))
         st.markdown(
             f"<div class='hm-row'><span class='hm-tag' style='background:{sec[3]}'>{sec[0] or 'رصد'}</span> "
@@ -2951,18 +3097,22 @@ def render_saved():
                 "📝 ملاحظتي (لربط الأحداث ببعضها)", value=it.get("note", ""), key=f"note_{h}", height=80,
                 on_change=set_note, args=(it["url"], f"note_{h}"),
             )
-            b1, b2, b3 = st.columns(3)
+            b1, b2, b3, b4 = st.columns(4)
             if b1.button("📝 ملخص سريع للمقال", key=f"svsum_{h}"):
                 with st.spinner("جارٍ التلخيص…"):
                     sums[it["url"]] = core.summarize(it["url"])
+            if st.button("🔎 برومبت: دوّر على الخبر كامل", key=f"svfind_{h}"):
+                st.session_state["article_prompt_active"] = {"url": it["url"], "title": it.get("title_ar") or it.get("title") or "خبر",
+                                                             "prompt": article_script_prompts_mod.build_find_prompt([it])}
             if b2.button("🎬 برومبت سكريبت", key=f"svscript_{h}"):
-                st.session_state["article_prompt_active"] = {"title": it.get("title_ar") or it.get("title") or "مقال محفوظ", "prompt": article_script_prompts_mod.build_script_prompt([it])}
-            b3.button("🗑️ حذف من المحفوظات", key=f"del_{h}", on_click=delete_item, args=(it["url"],))
-            _sv_prompt = st.session_state.get("article_prompt_active")
-            if _sv_prompt:
-                with st.expander("🧠 برومبت السكريبت الجاهز", expanded=False):
-                    st.text_area("البرومبت", _sv_prompt["prompt"], height=300, key=f"sv_prompt_{h}")
-                    st.download_button("تنزيل البرومبت", _sv_prompt["prompt"], file_name="marsad_article_script_prompt.txt", key=f"sv_prompt_dl_{h}")
+                st.session_state["article_prompt_active"] = {"url": it["url"], "title": it.get("title_ar") or it.get("title") or "مقال محفوظ",
+                                                             "prompt": article_script_prompts_mod.build_script_prompt([it])}
+            basket_button(b3, it, "saved", f"sv_{h}")
+            b4.button("🗑️ حذف من المحفوظات", key=f"del_{h}", on_click=delete_item, args=(it["url"],))
+            _sv_prompt = st.session_state.get("article_prompt_active") or {}
+            if _sv_prompt.get("url") == it["url"]:
+                with st.expander("🧠 برومبت السكريبت الجاهز", expanded=True):
+                    st.code(_sv_prompt["prompt"], language=None)
             listen_widget(it, f"sv_{h}")
             if it["url"] in sums:
                 st.info(sums[it["url"]])
@@ -3060,8 +3210,9 @@ def render_keys_admin():
     def link(c):
         return f"{base}/?k={c}" if base else f"?k={c}"
     if st.session_state.get("k_last"):
-        st.success("تم التوليد. انسخ الرابط وأرسله:")
-        st.code(link(st.session_state["k_last"]), language=None)
+        st.success("✅ اتولّدت شفرة جديدة. الرابط مستخبي عشان الأمان، افتحه لما تيجي تبعته.")
+        if st.toggle("👁️ اعرض رابط الشفرة الجديدة", value=False, key=f"kshow_new_{st.session_state['k_last']}"):
+            st.code(link(st.session_state["k_last"]), language=None)
     icons = {"active": "🟢 فعّالة", "unused": "🟡 لم تُفتح", "expired": "⚪ انتهت", "revoked": "🔴 ملغاة", "unused_expired": "⚪ سقطت (لم تُفتح)"}
     for k in sorted(ks, key=lambda x: x.get("created", ""), reverse=True):
         stt = keys_mod.status(k)
@@ -3070,7 +3221,11 @@ def render_keys_admin():
             seen_txt = seen.astimezone(core.TZ).strftime("%m-%d %H:%M") if seen else "—"
             st.markdown(f"**{k.get('label', '')}** — {icons.get(stt, stt)} — {keys_mod.human_left(k)}  \n"
                         f"{'📰 تقرير فقط' if k.get('scope') == 'reports' else 'صلاحية كاملة'} · فتحها {k.get('visits', 0)} مرة · آخر دخول: {seen_txt} (القاهرة) · المدة: {int(k.get('hours', 0))} ساعة")
-            st.code(link(k["code"]), language=None)
+            code_ = str(k.get("code", ""))
+            st.caption("الشفرة: " + (code_[:5] + "••••" + code_[-2:] if len(code_) > 8 else "••••"))
+            # الرابط مستخبي، ومفتاح الزرار مربوط بالشفرة نفسها (مش بترتيب الصف) فمايتفتحش لوحده لو الترتيب اتغير
+            if stt in ("active", "unused") and st.toggle("👁️ اعرض رابط الدعوة", value=False, key=f"kshow_{code_}"):
+                st.code(link(code_), language=None)
             b1, b2 = st.columns(2)
             if stt in ("active", "unused") and b1.button("⛔ إلغاء الآن", key=f"krv_{k['code']}"):
                 keys_mod.mutate(_GT, _GG, lambda ks_, c=k["code"]: keys_mod.find(ks_, c).update(revoked=True))
@@ -3544,6 +3699,85 @@ def render_posts(P="pol"):
                     s["posts"].pop(i)
                     persist()
                     st.rerun()
+
+
+def render_basket():
+    """سلة المقالات: تختار مقالات من أي مكان، وبعدين تعمل لهم برومبت ربط أو اسكريبت"""
+    st.markdown("### 🧺 سلة المقالات والسكريبت")
+    st.caption("وانت بتتصفح أي تاب أو المحفوظات أو صفحة قراءة المقال، دوس «🧺 ضيفه للسلة» جنب أي مقال. "
+               "المقالات بتتجمع هنا مع بعض حتى لو من تابات مختلفة (أمريكي على إسرائيلي على مصري)، وبعدين تعمل لهم برومبت واحد.")
+    if PERSIST and time.time() - st.session_state.get("_bk_sync", 0) > 15:
+        # المقالات اللي ضفتها من صفحة القراءة (تاب تاني) بتتحفظ في الـGist، فبنجيبها من هناك
+        try:
+            fresh = store.load(GH_TOKEN, GH_GIST).get("basket") or []
+            S()["basket"] = fresh
+            st.session_state.setdefault("store_base", store.empty())["basket"] = copy.deepcopy(fresh)
+        except Exception:
+            pass
+        st.session_state["_bk_sync"] = time.time()
+    b = basket()
+    if not b:
+        st.info("السلة فاضية. روح أي تاب بحث وضيف المقالات اللي عايزها.")
+        return
+    lab = lambda d: about_plain(re.sub(r"<[^>]+>", "", html.unescape(src_label(d, with_domain=False))).split("·")[0])
+    texts = st.session_state.setdefault("bk_texts", {})
+    st.markdown(f"**في السلة {len(b)} مقال:**")
+    for x in list(b):
+        c1, c2 = st.columns([5, 1])
+        ttl = x.get("title_ar") or x.get("title") or x.get("url")
+        got = texts.get(x["url"])
+        c1.markdown(f"- [{ttl}]({x['url']}) · {lab(x.get('domain', ''))} · {fmt_seen(x.get('seendate', ''))}"
+                    + (f" · من: {x['from_tab']}" if x.get("from_tab") else "")
+                    + (" · 📄 النص اتجاب" if got else (" · ⚠️ النص ماتجابش" if got == "" else "")))
+        c2.button("✖️ شيل", key=f"bkrm_{x['id']}", on_click=basket_toggle, args=(x, ""), use_container_width=True)
+    c1, c2 = st.columns(2)
+    if c1.button("📄 اجلب نص المقالات (أدق في التحليل، بياخد دقيقة)", use_container_width=True, key="bk_fetch"):
+        bar = st.progress(0.0, text="بنجيب نص المقالات…")
+        for i, x in enumerate(b):
+            if x["url"] not in texts or texts[x["url"]] == "":
+                try:
+                    art = core.fetch_article(x["url"])
+                    texts[x["url"]] = (art or {}).get("text", "")[:6000]
+                except Exception:
+                    texts[x["url"]] = ""
+            bar.progress((i + 1) / len(b), text=f"{i + 1} من {len(b)}")
+        bar.empty()
+        miss = sum(1 for x in b if not texts.get(x["url"]))
+        st.success("✅ خلص." + (f" {miss} مقال ماتجابش نصهم (اشتراك أو حجب)، هيتحلّلوا من العنوان والمقتطف بس." if miss else ""))
+    if c2.checkbox("أنا متأكد، امسح السلة كلها", key="bk_clear_ok") and c2.button("🗑️ فضّي السلة", key="bk_clear", use_container_width=True):
+        S()["basket"] = []
+        persist()
+        st.rerun()
+    st.divider()
+    name = st.text_input("اسم الموضوع (بيتكتب في البرومبت)", value="مقالاتي المختارة", key="bk_name")
+    kind = st.radio("عايز برومبت إيه؟", [
+        "🧭 ربط وتحليل واسكريبتات (نفس برومبتات الملفات والخيوط: تحليل، اسكريبت 1 و2 و3، شرح للمواطن، تقرير تتبّع)",
+        "🎬 سكريبت من نص المقالات نفسها (بيحلل كل مقال ويفحصه ويقارنهم ببعض)",
+        "🔎 دوّر على الأخبار دي كاملة (بالعنوان والترجمة والكاتب والجريدة)"], key="bk_kind")
+    items = [{**x, "text": texts.get(x["url"], "")} for x in b]
+    if kind.startswith("🔎"):
+        prompt = article_script_prompts_mod.build_find_prompt([{**x, "outlet": lab(x.get("domain", ""))} for x in items])
+        st.caption("البرومبت ده بيطلب من الذكاء الاصطناعي يدوّر على كل خبر بالعنوان الأصلي، وبترجمته، وباسم الكاتب، وباسم الجريدة، وفي الوكالات، "
+                   "ويقولك لقاه كامل ولا ملخص ولا ملقاهوش. استخدمه مع ذكاء اصطناعي عنده بحث على النت (جيميناي أو غيره).")
+        st.code(prompt, language=None)
+        st.download_button("⬇️ نزّل البرومبت", prompt, file_name="marsad_find_articles_prompt.txt", key="bk_dl_find")
+    elif kind.startswith("🎬"):
+        dur = st.radio("مدة الفيديو", ["3 إلى 5 دقائق", "5 إلى 7 دقائق", "8 إلى 10 دقائق", "12 إلى 15 دقيقة"], index=1, horizontal=True, key="bk_dur")
+        if not any(texts.get(x["url"]) for x in b):
+            st.caption("💡 الأدق إنك تدوس «اجلب نص المقالات» الأول، عشان الذكاء الاصطناعي يحلل المقال نفسه مش العنوان بس.")
+        prompt = article_script_prompts_mod.build_script_prompt(
+            [{**x, "outlet": lab(x.get("domain", ""))} for x in items], duration=dur)
+        st.caption(f"البرومبت جاهز ({len(prompt):,} حرف). انسخه من زرار النسخ فوق على اليمين، أو نزّله.")
+        st.code(prompt, language=None)
+        st.download_button("⬇️ نزّل البرومبت", prompt, file_name="marsad_basket_script_prompt.txt", key="bk_dl")
+    else:
+        dits = [dossiers_mod.from_app_item({**x, "snip_ar": (x.get("text") or "")[:700] or x.get("summary_ar") or x.get("snip_ar") or x.get("snippet", "")},
+                                           lab, source_country, "سلة المقالات") for x in items if x.get("title") or x.get("title_ar")]
+        r = dossiers_mod.run(dits, [], 30, 1, None, topic=name.strip() or "مقالاتي المختارة") if dits else {"dossiers": []}
+        if r.get("dossiers"):
+            _dos_group(r["dossiers"][0], "الموضوع", "basket")
+        else:
+            st.warning("مقدرتش أعمل ملف من المقالات دي. اتأكد إن ليها عناوين.")
 
 
 @_fragment
@@ -5913,6 +6147,8 @@ if _on("library", "dos"):
         render_dossiers()
         render_custom_collections("pol")
 
+if _on("library", "basket"):
+    render_basket()
 if _on("library", "sv"):
     with tab_sv:
         render_saved()
