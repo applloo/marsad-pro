@@ -18,6 +18,7 @@ import core
 import article_reader as article_reader_mod
 import article_script_prompts as article_script_prompts_mod
 import dossiers as dossiers_mod
+import dictionary as dict_mod
 import analysis_lab as analysis_lab_mod
 import analysis_packages as analysis_packages_mod
 import content_factory as content_factory_mod
@@ -128,7 +129,7 @@ def src_label(domain, with_domain=True):
         return html.escape(str(domain or "")) + f" (تعذّر تحديد الدولة: {type(e).__name__})"
 
 
-APP_VERSION = "9.12"  # بيزيد مع كل نسخة جديدة
+APP_VERSION = "9.13"  # بيزيد مع كل نسخة جديدة
 st.set_page_config(page_title="Marsad | مركز الرصد والتحليل", page_icon="🔷", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown(
@@ -1662,6 +1663,117 @@ def _live_search(key, lr):
             st.caption(f"🕒 {SEARCH_SCOPES.get(k, k)} — لسه")
 
 
+def _dict_load():
+    ss = st.session_state
+    if "dict_data" not in ss:
+        d = None
+        if GH_TOKEN and GH_GIST:
+            try:
+                d = store.load_file(GH_TOKEN, GH_GIST, dict_mod.FILE, None)
+            except Exception:
+                d = None
+        ss["dict_data"] = dict_mod.clean(d) if d else dict_mod.default()
+    return ss["dict_data"]
+
+
+def _dict_save(d):
+    d = dict_mod.clean(d)
+    st.session_state["dict_data"] = d
+    if not (IS_ADMIN and GH_TOKEN and GH_GIST):
+        return False
+    store.save_file(GH_TOKEN, GH_GIST, dict_mod.FILE, d)
+    return True
+
+
+def _dict_to_trend(which, line):
+    st.session_state[f"nt_pf_{which}"] = dict_mod.merge_line(st.session_state.get(f"nt_pf_{which}", ""), line)
+    st.session_state["nav_main"] = "library"
+    st.session_state["nav_sub_library"] = "dos"
+
+
+def render_dictionary():
+    """قاموس الكلمات: البلدان والأماكن والشخصيات بكل اللغات. تنسخ منه، أو تبعته للترند أو للإشعارات، وتزوّد عليه"""
+    ss = st.session_state
+    d = _dict_load()
+    st.markdown("### 📖 قاموس الكلمات")
+    st.caption("كل سطر جاهز تنسخه (أيقونة النسخ في ركن المربع) وتلزقه في الإشعارات أو الترند. "
+               "أو اختار من تحت وابعته على طول للترند أو للإشعارات.")
+    with st.expander("📏 إزاي تكتب الكلمات"):
+        st.markdown(
+            "- **الفاصلة = «أو»:** `ليبي، Liby، לוב` يعني أي خبر فيه كلمة منهم.\n"
+            "- **المسافة جوه الكلمة = «الاتنين مع بعض»:** `سفينة روسية` يعني لازم «سفينة» و«روسية».\n"
+            "- **اكتب أقصر جزء ثابت:** `ليبي` بتمسك ليبيا والليبي والليبية. بس ماتقصّرش زيادة: `روس` بتمسك «دروس»، و`يمن` بتمسك «يمنع».\n"
+            "- **الهمزة:** اكتب الشكلين: `إيران، ايران`. والفارسي بيكتب الياء «ی» فـ`ایران` غير `ايران`.\n"
+            "- **الإشعارات:** أي كلمة لوحدها بتطلّع إشعار، فخليها محددة. **الترند:** الخبر لازم يكون فيه كلمة من ① وكلمة من ②.")
+    q = st.text_input("🔍 دوّر في القاموس", key="dict_q", placeholder="مثال: ليبيا أو Haftar")
+    hits = dict_mod.search(d, q)
+    labels = {f"{g} · {r['name']}": r for g, r in hits}
+    picked = st.multiselect("✅ اختار بلد أو شخصية أو أكتر (عشان تبعتهم مرة واحدة)", list(labels), key="dict_pick")
+    if picked:
+        line = "، ".join(labels[p]["line"] for p in picked)
+        line = dict_mod.merge_line("", line)
+        st.code(line, language=None)
+        c1, c2, c3 = st.columns(3)
+        c1.button("① حطهم في الكلمات الأساسية للترند", key="dict_g1", use_container_width=True,
+                  on_click=_dict_to_trend, args=("g1", line))
+        c2.button("② حطهم في «لازم تيجي معاها»", key="dict_g2", use_container_width=True,
+                  on_click=_dict_to_trend, args=("g2", line))
+        if c3.button("🔔 ضيفهم لكلمات الإشعارات", key="dict_al", use_container_width=True):
+            if not (IS_ADMIN and GH_TOKEN and GH_GIST):
+                st.warning("الإشعارات للأدمن بس، ومحتاجة التخزين الدائم.")
+            else:
+                try:
+                    cfg = store.load_file(GH_TOKEN, GH_GIST, ALERTS_CFG, {}) or {}
+                    cfg["keywords"] = dict_mod.merge_line(cfg.get("keywords", ""), line)
+                    store.save_file(GH_TOKEN, GH_GIST, ALERTS_CFG, cfg)
+                    ss["alerts_cfg"] = cfg
+                    st.success("✅ اتضافوا لكلمات الإشعارات.")
+                except Exception as ex:
+                    st.error(f"ما اتحفظش ({type(ex).__name__}).")
+    st.divider()
+    names = [g["name"] for g in d["groups"]]
+    if not names:
+        st.info("القاموس فاضي. دوس «رجّع القاموس الأصلي» تحت.")
+    grp = pick(st, "المجموعة", names, names[0], "dict_grp") if names else None
+    for g in d["groups"]:
+        if g["name"] != grp:
+            continue
+        shown = [r for r in g["rows"] if r in [h[1] for h in hits]] if q else g["rows"]
+        for r in shown:
+            st.markdown(f"**{html.escape(r['name'])}**" + (f" — <span style='opacity:.7'>{html.escape(r['note'])}</span>" if r.get("note") else ""),
+                        unsafe_allow_html=True)
+            st.code(r["line"], language=None)
+        with st.expander(f"✏️ عدّل «{g['name']}» أو زوّد عليه"):
+            st.caption("اكتب في الجدول على طول. صف جديد: آخر سطر في الجدول. تمسح صف: علّم عليه ودوس 🗑️. وبعدين «💾 احفظ».")
+            edited = st.data_editor(g["rows"], num_rows="dynamic", use_container_width=True, key=f"dict_ed_{names.index(g['name'])}",
+                                    column_config={"name": st.column_config.TextColumn("الاسم"),
+                                                   "note": st.column_config.TextColumn("ملاحظة"),
+                                                   "line": st.column_config.TextColumn("السطر (بفاصلة)", width="large")})
+            if st.button("💾 احفظ التعديل", type="primary", key=f"dict_sv_{names.index(g['name'])}"):
+                rows = edited.to_dict("records") if hasattr(edited, "to_dict") else list(edited)
+                new = copy.deepcopy(d)
+                for gg in new["groups"]:
+                    if gg["name"] == g["name"]:
+                        gg["rows"] = rows
+                try:
+                    ok = _dict_save(new)
+                    st.success("✅ اتحفظ." if ok else "✅ اتعدّل هنا بس (الحفظ الدائم للأدمن).")
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"ما اتحفظش ({type(ex).__name__}).")
+    with st.expander("➕ مجموعة جديدة أو رجوع للأصل"):
+        nn = st.text_input("اسم المجموعة الجديدة", key="dict_new_grp", placeholder="مثال: 🏛️ أحزاب وتنظيمات")
+        if st.button("➕ ضيف المجموعة", key="dict_add_grp") and nn.strip():
+            new = copy.deepcopy(d)
+            new["groups"].append({"name": nn.strip(), "rows": [{"name": "مثال", "note": "", "line": "اكتب الكلمات هنا"}]})
+            _dict_save(new)
+            st.rerun()
+        sure = st.checkbox("متأكد إني عايز أرجّع القاموس الأصلي (هيمسح تعديلاتي)", key="dict_reset_ok")
+        if st.button("↩️ رجّع القاموس الأصلي", key="dict_reset", disabled=not sure):
+            _dict_save(dict_mod.default())
+            st.rerun()
+
+
 def render_run_all():
     """زرار واحد بيشغّل كل الأتمتة ورا بعض على GitHub (all.yml)"""
     with st.container(border=True):
@@ -1817,7 +1929,8 @@ SUB_SECTIONS = {
                "paid": "🧾 رادار التقارير المدفوعة", "gd": "🌐 بحث GDELT"},
     "intel": {"wr": "✍️ كتّاب ومحللون", "in": "🛰️ مكتب الاستخبارات", "health": "🩺 صحة المصادر",
               "clusters": "🧩 تجميع الأحداث والروايات", "entities": "🧭 الكيانات والتناقضات"},
-    "library": {"dos": "🧵 الملفات والخيوط", "basket": "🧺 سلة المقالات والسكريبت", "sv": "📌 المحفوظات", "lab": "🧠 ورشة التحليل"},
+    "library": {"dos": "🧵 الملفات والخيوط", "basket": "🧺 سلة المقالات والسكريبت", "sv": "📌 المحفوظات", "lab": "🧠 ورشة التحليل",
+                "dict": "📖 قاموس الكلمات"},
 }
 
 
@@ -4001,6 +4114,10 @@ def _dos_item_md(it):
 def render_new_trend(P="pol"):
     """أسهل طريقة تتابع ترند أو موضوع جديد: تكتب اسمه وكلماته، فيتعمل ملف دائم، ويبدأ بحث عنه في كل المصادر على GitHub"""
     sx, egp = PROFS[P]["sx"], P == "eg"
+    for _k in ("g1", "g2"):  # كلمات اتبعتت من «📖 قاموس الكلمات»
+        _pf = st.session_state.pop(f"nt_pf_{_k}", None)
+        if _pf:
+            st.session_state[f"nt_{_k}{sx}"] = dict_mod.merge_line(st.session_state.get(f"nt_{_k}{sx}", ""), _pf)
     with st.container(border=True):
         st.markdown("#### ➕ تابع ترند أو موضوع جديد")
         st.caption("اكتب اسم الموضوع وكلماته، ودوس «ابدأ المتابعة». بيحصل حاجتين: ① بيتعمل ملف دائم بالاسم ده يجمّع أي خبر جديد عن الموضوع، "
@@ -6594,6 +6711,8 @@ if _on("library", "sv"):
 if _on("library", "lab"):
     with tab_lab:
         render_analysis_lab()
+if _on("library", "dict"):
+    render_dictionary()
 
 if _on("guide"):
     with tab_guide:
