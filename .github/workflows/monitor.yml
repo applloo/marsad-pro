@@ -21,6 +21,13 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install requests deep-translator trafilatura
+      - name: تكملة ترجمة العناوين اللي فضلت إنجليزي (جهاز تاني جوجل بيرد عليه)
+        continue-on-error: true
+        timeout-minutes: 15
+        run: python translate_sweep.py
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
       - name: تحديث ملفات القضايا من نتايج البحث الشامل
         continue-on-error: true
         run: python scheduled_monitor.py

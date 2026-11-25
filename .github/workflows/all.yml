@@ -59,13 +59,17 @@ jobs:
     needs: search
     if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    timeout-minutes: 95
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install requests deep-translator trafilatura
+      - name: تكملة ترجمة العناوين اللي فضلت إنجليزي (جهاز تاني جوجل بيرد عليه)
+        continue-on-error: true
+        timeout-minutes: 15
+        run: python translate_sweep.py
       - name: ④ تحديث ملفات القضايا
         continue-on-error: true
         timeout-minutes: 35
