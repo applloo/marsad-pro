@@ -46,6 +46,13 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertIn('cron: "7 9 * * *"', text)
         self.assertIn('workflow_dispatch:', text)
 
+    def test_run_all_workflow_runs_every_job_in_order(self):
+        text = Path('.github/workflows/all.yml').read_text(encoding='utf-8')
+        order = [text.index(x) for x in ('daily.py', 'search_job.py', 'watch_job.py', 'scheduled_monitor.py', 'intel_job.py')]
+        self.assertEqual(order, sorted(order))
+        self.assertEqual(text.count('continue-on-error: true'), 4)
+        self.assertIn('workflow_dispatch:', text)
+
     def test_backup_workflow_is_not_part_of_active_operations(self):
         self.assertFalse(Path('.github/workflows/backup.yml').exists())
 
