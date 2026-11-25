@@ -1,0 +1,37 @@
+name: نقل البيانات لـGist برو الجديد (مرة واحدة)
+# شغّله مرة واحدة بعد ما تحط GIST_ID الجديد في Secrets. بينسخ كل البيانات من الـGist القديم للجديد،
+# والقديم مابيتلمسش (التطبيق القديم بيكمل عليه عادي). بعد ما ينجح بيمسح نفسه.
+concurrency:
+  group: marsad-migrate-${{ github.ref }}
+  cancel-in-progress: false
+on:
+  workflow_dispatch:
+    inputs:
+      old_gist_id:
+        description: "رقم الـGist القديم (اللي كان في GIST_ID قبل ما تغيّره)"
+        required: true
+permissions:
+  contents: write
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: نسخ الملفات
+        run: python migrate_gist.py
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+          OLD_GIST_ID: ${{ inputs.old_gist_id }}
+      - name: مسح المهمة دي بعد ما نجحت
+        run: |
+          git config user.name "marsad-migrate"
+          git config user.email "actions@users.noreply.github.com"
+          git rm -f --ignore-unmatch .github/workflows/migrate.yml migrate_gist.py
+          git commit -m "نقل البيانات خلص: مسح مهمة النقل" || echo "مفيش حاجة"
+          git push
