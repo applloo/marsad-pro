@@ -128,7 +128,7 @@ def src_label(domain, with_domain=True):
         return html.escape(str(domain or "")) + f" (تعذّر تحديد الدولة: {type(e).__name__})"
 
 
-APP_VERSION = "9.11"  # بيزيد مع كل نسخة جديدة
+APP_VERSION = "9.12"  # بيزيد مع كل نسخة جديدة
 st.set_page_config(page_title="Marsad | مركز الرصد والتحليل", page_icon="🔷", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown(
@@ -997,6 +997,21 @@ def basket_bar(where):
         c2.button("🧺 روح للسلة", key=f"gobk_{where}", on_click=go_basket, use_container_width=True)
 
 
+# جوه تطبيق «مرصد برو» (الموبايل/الكمبيوتر) الرابط فيه app=1: بنخفي شريط Streamlit والقايمة الرئيسية والعنوان،
+# لأن التطبيق ليه قايمته وكروته، فتحس إنه تطبيق مش موقع
+try:
+    IN_APP = bool(st.session_state.get("in_app")) or st.query_params.get("app") == "1"
+except Exception:
+    IN_APP = False
+if IN_APP:
+    st.session_state["in_app"] = True
+    st.markdown("""<style>
+[data-testid="stHeader"],[data-testid="stToolbar"],[data-testid="stDecoration"],header{display:none!important}
+[data-testid="stMainBlockContainer"],.block-container{padding-top:.5rem!important}
+div[data-testid="stElementContainer"]:has(#marsad-main-nav-start)+div,
+div.element-container:has(#marsad-main-nav-start)+div{display:none!important}
+</style>""", unsafe_allow_html=True)
+
 # صفحة قراءة المقال: بعد تحميل التخزين، عشان زرار «ضيفه للسلة» يشتغل جواها
 if "view" in st.query_params:
     reader_page()
@@ -1168,9 +1183,10 @@ def do_analyze():
 
 # ───────────────────────── الواجهة الرئيسية ─────────────────────────
 
-show_logo()
-st.title("مركز مرصد | الرصد والتحليل")
-st.caption("منصة استخبارات المصادر المفتوحة · اجمع الإشارات، اربط الأدلة، وافهم الصورة الكاملة")
+if not IN_APP:
+    show_logo()
+    st.title("مركز مرصد | الرصد والتحليل")
+    st.caption("منصة استخبارات المصادر المفتوحة · اجمع الإشارات، اربط الأدلة، وافهم الصورة الكاملة")
 if not IS_ADMIN:
     _a = st.session_state["auth"]
     st.info(f"🎟️ نسخة تجريبية لـ «{_a.get('label', '')}» — "
@@ -1333,7 +1349,8 @@ def render_daily():
                 st.caption(f"⚠️ تعذّر عرض عنوان ({type(e).__name__}: {e})")
 
 
-render_about()
+if not IN_APP:
+    render_about()
 if not IS_ADMIN and st.session_state["auth"].get("scope") == "reports":
     render_daily()  # اشتراك «تقرير فقط»: لا يرى بقية التطبيق
     show_footer()
