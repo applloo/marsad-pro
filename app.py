@@ -221,7 +221,7 @@ def thumb_html(a):
     return (f"<img class='thumb' src='{html.escape(img, quote=True)}' loading='lazy' referrerpolicy='no-referrer' "
             "onerror=\"this.style.display='none'\" alt=''>")
 
-APP_VERSION = "9.15"  # بيزيد مع كل نسخة جديدة
+APP_VERSION = "9.16"  # بيزيد مع كل نسخة جديدة
 st.set_page_config(page_title="Marsad | مركز الرصد والتحليل", page_icon="🔷", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown(
@@ -863,6 +863,20 @@ def reader_page():
         st.success(f"🟢 طريقة جلب المقال: {via}")
     else:
         st.info(f"🟡 طريقة جلب المقال: {via} — لأن الموقع رفض فتحه مباشرة. (النص قد يختلف شكله قليلاً عن الأصل.)")
+    # 9.16: هل النص فعلاً بتاع العنوان؟ (قبل كده كان ممكن يعرض الأخبار الجانبية للصفحة على إنها المقال)
+    _rel = art.get("relevance")
+    if art.get("mismatch"):
+        st.error("⚠️ **النص ده غالباً مش بتاع المقال!** كلمات العنوان المهمة مش موجودة فيه "
+                 f"(التطابق {int((_rel or 0) * 100)}%). الموقع غالباً بيحمّل المقال بطريقة البرنامج مش بيقدر يقراها، "
+                 "فاللي اتجاب هو الأخبار الجانبية. افتح «الصفحة الأصلية مترجمة» فوق، أو جرّب «التغطية البديلة».")
+    elif _rel is not None:
+        st.caption(f"✅ النص متطابق مع العنوان بنسبة {int(_rel * 100)}%")
+    _diag = list(art.get("diag") or [])
+    _why = core.FETCH_WHY.get(url)
+    if _diag or _why:
+        with st.expander("🔍 تشخيص جلب المقال (ابعته لـ Claude لو النص غلط)", expanded=False):
+            st.code("\n".join([f"الرابط: {url}", f"العنوان: {art.get('title', '')}", f"الطريقة: {via}"]
+                              + _diag + ([f"ملاحظة: {_why}"] if _why else [])), language=None)
     if core._host(url) and core._host(url) != "news.google.com":
         st.markdown(f"📰 **الجريدة والبلد:** {src_label(core._host(url), with_domain=False)}", unsafe_allow_html=True)
     for _meta_label, _meta_value in article_reader_mod.metadata_rows(art):
@@ -3043,7 +3057,7 @@ if _on("search", "geo"):
             "🇮🇱 إسرائيل": ("il", ISRAEL, "IS", "IL", "ابحث في المصادر الإسرائيلية",
                              "يُترجم بحثك إلى العبرية للمصادر العبرية، وإلى الإنجليزية للنسخ الإنجليزية."),
             "🇺🇸 الولايات المتحدة": ("us", USA, "US", "US", "ابحث في المصادر الأمريكية",
-                                      "مصادر أمريكية ومراكز أبحاث وصحافة دولية ناطقة بالإنجليزية."),
+                                      "مصادر أمريكية بس: جرايد ومراكز أبحاث أمريكية. (المصادر الدولية بقت في تاب «🌐 الأخبار الدولية»)"),
             "🇬🇧 بريطانيا": ("uk", UK, "UK", "UK", "ابحث في المصادر البريطانية",
                               "صحف وقنوات بريطانية ومصادر متخصصة بالشرق الأوسط."),
             "🌍 تركيا وإيران وإثيوبيا": ("rg", REGION_LOCAL, None, "US", "ابحث في مصادر تركيا وإيران وإثيوبيا",

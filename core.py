@@ -436,6 +436,61 @@ def _authors_from_html(page):
     return out[:5]
 
 
+# ───── 9.16: التأكد إن النص المستخرج هو المقال نفسه مش العمود الجانبي ─────
+# السبب (اتكشف من مقال JNS «Former spy chief calls for war with Iran…»): المستخرج البسيط بيعتبر أي وسم <article>
+# حاوية المقال، وفي مواقع كتير كل خبر في عمود «أخبار تانية» بيبقى <article> لوحده، فبيلم كل الأخبار الجانبية.
+# وكان البرنامج بيختار «النص الأطول» وخلاص، فالعمود الجانبي (أطول من المقال القصير) كان بيكسب.
+_REL_STOP = set("""about after again against also among another because been before being between both could during each
+from further have having here into just more most much other over said says same should since some such than that their
+them then there these they this those through under until very were what when where which while will with would your
+year years news report reports amid calls call says said told today live video watch read more first last week weeks
+عن على الى إلى في من مع بعد قبل حول ضد بين خلال منذ حتى كان كانت هذا هذه ذلك التي الذي الذين يوم اليوم قال قالت""".split())
+
+
+def _title_terms(title):
+    out = []
+    for w in re.findall(r"[^\W\d_]{4,}", (title or "").lower()):
+        if w in _REL_STOP:
+            continue
+        if w.startswith("ال") and len(w) > 5:
+            w = w[2:]
+        w = w[:6]  # جذر تقريبي: chemical/chemicals → chemic ، weapons → weapon
+        if w not in out:
+            out.append(w)
+    return out[:12]
+
+
+def title_relevance(title, text):
+    """نسبة كلمات العنوان المهمة الموجودة في النص (من 0 لـ 1). None لو العنوان قصير ومينفعش نحكم"""
+    terms = _title_terms(title)
+    if len(terms) < 3:
+        return None
+    low = (text or "").lower()
+    return round(sum(1 for t in terms if t in low) / len(terms), 2)
+
+
+def _dedupe_paras(txt):
+    """بيشيل الفقرات المتكررة (العمود الجانبي أحياناً بيتكرر مرتين في الصفحة: الأحدث والأكثر قراءة)"""
+    seen, out = set(), []
+    for ln in (txt or "").split("\n"):
+        k = " ".join(ln.lower().split())
+        if len(k) > 30 and k in seen:
+            continue
+        seen.add(k)
+        out.append(ln)
+    return "\n".join(out)
+
+
+def _better(cur_text, new_text, title, ratio):
+    """النص الجديد يكسب لو أطول بالنسبة المطلوبة ومش أبعد عن العنوان من الحالي"""
+    if len(new_text) <= len(cur_text) * ratio:
+        return False
+    r_cur, r_new = title_relevance(title, cur_text), title_relevance(title, new_text)
+    if r_cur is None or r_new is None:
+        return True
+    return r_new >= r_cur - 0.05
+
+
 def _extract(content, enc=None):
     text = content.decode(enc or "utf-8", errors="replace") if isinstance(content, bytes) else content
     out = None
@@ -451,26 +506,34 @@ def _extract(content, enc=None):
         ex.feed(text)
         ex.close()
         out = {"title": ex.title, "date": ex.date, "text": "\n".join(ex.paras)}
-    if out is not None and len(out["text"]) < 3000:  # يبدو مقطوعاً: جرّب تمريرة أوسع ثم المستخرج البسيط واختر الأطول
+    diag = [f"المستخرج الأساسي: {len(out['text'])} حرف"]
+    if out is not None and len(out["text"]) < 3000:  # يبدو مقطوعاً: جرّب تمريرة أوسع ثم المستخرج البسيط
+        ex = _SimpleExtractor()
+        ex.feed(text)
+        ex.close()
+        title = out["title"] or ex.title  # العنوان من الصفحة نفسها (og:title) عشان نقارن بيه
         try:
             if trafilatura is not None:
                 d2 = trafilatura.extract(text, output_format="json", with_metadata=True, favor_recall=True,
                                          include_tables=True, include_comments=False, deduplicate=False)
                 if d2:
                     t2 = json.loads(d2).get("text") or ""
-                    if len(t2) > len(out["text"]) * 1.15:
+                    ok = _better(out["text"], t2, title, 1.15)
+                    diag.append(f"التمريرة الأوسع: {len(t2)} حرف، تطابق مع العنوان {title_relevance(title, t2)} ← {'اتاخدت' if ok else 'اترفضت'}")
+                    if ok:
                         out["text"] = t2
         except Exception:
             pass
-        ex = _SimpleExtractor()
-        ex.feed(text)
-        ex.close()
         t3 = "\n".join(ex.paras)
-        if len(t3) > len(out["text"]) * 1.3:
+        ok = _better(out["text"], t3, title, 1.3)
+        diag.append(f"المستخرج البسيط: {len(t3)} حرف، تطابق مع العنوان {title_relevance(title, t3)} ← {'اتاخد' if ok else 'اترفض'}")
+        if ok:
             out["text"] = t3
             out["title"] = out["title"] or ex.title
             out["date"] = out["date"] or ex.date
-    out["text"] = _drop_boiler(out["text"])
+        out["title"] = out["title"] or title
+    out["diag"] = diag
+    out["text"] = _dedupe_paras(_drop_boiler(out["text"]))
     out["authors"] = _authors_from_html(text[:400000])
     out["section"] = _page_meta(text[:200000])
     words = max(1, len(out["text"].split()))
@@ -625,6 +688,33 @@ def fetch_alternative(url, min_len=400):
     return None, " | ".join(errs)
 
 
+def _check_relevance(url, d):
+    """9.16: لو النص مش شبه العنوان (أقل من الثلث من كلماته المهمة) بنجرب خدمة القراءة البديلة وناخد الأقرب للعنوان.
+    ولو برضه بعيد بنعلّم عليه mismatch عشان صفحة القراءة تحذّرك بدل ما تعرض كلام غلط على إنه المقال."""
+    title = d.get("title", "")
+    rel = title_relevance(title, d.get("text", ""))
+    d["relevance"] = rel
+    diag = d.setdefault("diag", [])
+    diag.append(f"تطابق النص النهائي مع العنوان: {rel if rel is not None else 'العنوان قصير مينفعش نحكم'}")
+    if rel is None or rel >= 0.34:
+        return d
+    d2, how = fetch_alternative(url, min_len=400)
+    rel2 = title_relevance(title, d2.get("text", "")) if d2 else None
+    diag.append(f"النص بعيد عن العنوان فجربنا البديل: {how} ← تطابق {rel2}")
+    if d2 and rel2 is not None and rel2 > rel:
+        d2["title"] = d2.get("title") or title
+        d2["relevance"], d2["diag"] = rel2, diag
+        d2.setdefault("via", how)
+        d2["mismatch"] = rel2 < 0.34
+        d.clear()
+        d.update(d2)
+        FETCH_WHY[url] = f"النص المباشر كان مش بتاع المقال فجُلب عبر: {how}"
+    else:
+        d["mismatch"] = True
+        FETCH_WHY[url] = "⚠️ النص اللي اتجاب مش شبه عنوان المقال (غالباً أخبار جانبية من الصفحة)"
+    return d
+
+
 def fetch_article(url):
     """يعيد dict بالنص أو None؛ سبب الفشل يُحفظ في FETCH_WHY[url]. الفشل لا يُخزَّن مؤقتاً فتصح المحاولة التالية"""
     if url in _ART_CACHE:
@@ -656,6 +746,7 @@ def fetch_article(url):
                 FETCH_WHY[url] = "الصفحة وصلت لكن لم يُعثر فيها على نص مقال (قد تُحمَّل بالجافاسكربت)"
                 return None
             d.setdefault("via", "الفتح المباشر من الموقع")
+            _check_relevance(url, d)
             _ART_CACHE[url] = d
             return d
         except Exception as e:
