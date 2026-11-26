@@ -733,6 +733,7 @@ color:#fff;font-size:17px;font-weight:700;cursor:pointer">⬅️ ارجع لقا
 <script>
 document.getElementById('bk').onclick=function(){
   var W=window.parent; try{W=window.top;}catch(e){}
+  try{ if(/[?&]app=1/.test(W.location.search)){ W.close(); return; } }catch(e){}  // جوه تطبيق مرصد برو: التطبيق هو اللي بيرجع
   try{ if(W.opener || W.history.length<=1){ W.close(); setTimeout(function(){ try{W.history.back();}catch(e){} },300); return; } }catch(e){}
   try{ W.history.back(); }catch(e){ window.history.back(); }
 };
