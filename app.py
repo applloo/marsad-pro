@@ -56,11 +56,11 @@ import store
 import time
 import uuid
 import writers as writers_mod
-from sources import ARAB_EG_GROUP, ARABIC, EGYPT, EGYPT_ARABIC, FLAGS, ISRAEL, REGION, SECTIONS, UK, USA, egypt_only, source_country
+from sources import ARAB_EG_GROUP, ARABIC, EGYPT, EGYPT_ARABIC, FLAGS, ISRAEL, REGION, REGION_LOCAL, SECTIONS, UK, USA, WORLD, egypt_only, source_country
 from writers import WRITERS
 
 DOMAIN_LABELS = {}
-for _g in (ISRAEL, USA, UK, REGION, ARABIC, EGYPT):
+for _g in (ISRAEL, USA, UK, REGION, WORLD, ARABIC, EGYPT):
     for _entries in _g.values():
         for _label, _doms, _ in _entries:
             for _d in _doms.split("|"):
@@ -129,7 +129,99 @@ def src_label(domain, with_domain=True):
         return html.escape(str(domain or "")) + f" (تعذّر تحديد الدولة: {type(e).__name__})"
 
 
-APP_VERSION = "9.13"  # بيزيد مع كل نسخة جديدة
+
+# ───────── 9.15: المقالات المدفوعة + الصور المصغرة ─────────
+# hard = اشتراك إجباري غالباً · metered = عدد مقالات مجاني محدود في الشهر وبعدين يطلب اشتراك
+PAYWALL = {
+    "nytimes.com": "metered", "washingtonpost.com": "metered", "wsj.com": "hard", "ft.com": "hard", "economist.com": "hard",
+    "bloomberg.com": "hard", "haaretz.com": "hard", "haaretz.co.il": "hard", "thetimes.co.uk": "hard", "thetimes.com": "hard",
+    "telegraph.co.uk": "hard", "foreignaffairs.com": "metered", "foreignpolicy.com": "metered", "theatlantic.com": "metered",
+    "newyorker.com": "metered", "africaintelligence.com": "hard", "africa-confidential.com": "hard", "tacticalreport.com": "hard",
+    "janes.com": "hard", "asia.nikkei.com": "hard", "scmp.com": "metered", "lemonde.fr": "hard", "spiegel.de": "metered",
+    "globes.co.il": "metered", "calcalist.co.il": "metered", "themarker.com": "hard", "jpost.com": "metered",
+    "al-monitor.com": "metered", "politico.com": "metered", "axios.com": "metered", "businessinsider.com": "metered",
+    "thejc.com": "metered", "israelhayom.co.il": "metered", "makorrishon.co.il": "metered", "theinformation.com": "hard",
+    "reuters.com": "metered", "barrons.com": "hard", "nationalinterest.org": "metered", "kyivindependent.com": "metered",
+}
+
+
+def paywall_kind(domain):
+    d = str(domain or "").lower().replace("www.", "")
+    for k, v in PAYWALL.items():
+        if d == k or d.endswith("." + k):
+            return v
+    return ""
+
+
+def pay_badge(domain):
+    k = paywall_kind(domain)
+    if k == "hard":
+        return " · <span class='pay'>🔒 مقال مدفوع (اشتراك) غالباً</span>"
+    if k == "metered":
+        return " · <span class='pay'>🔐 كام مقال مجاني في الشهر وبعدين اشتراك</span>"
+    return ""
+
+
+@st.cache_resource(show_spinner=False)
+def _thumb_cache():
+    return {}
+
+
+def _og_image(url):
+    """بيقرا أول جزء من صفحة الخبر ويطلع صورة og:image (الصورة اللي الموقع نفسه بيحطها للمشاركة). مفيش أي تكلفة"""
+    import requests
+    from urllib.parse import urljoin
+    try:
+        r = requests.get(url, timeout=(4, 6), stream=True, allow_redirects=True,
+                         headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36"})
+        try:
+            buf = b""
+            for chunk in r.iter_content(16384):
+                buf += chunk
+                if len(buf) > 200000 or b"</head>" in buf.lower():
+                    break
+        finally:
+            r.close()
+        head = buf.decode("utf-8", "ignore")
+        m = (re.search(r'<meta[^>]+(?:property|name)=["\'](?:og:image|og:image:url|twitter:image)["\'][^>]*content=["\']([^"\']+)', head, re.I)
+             or re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]*(?:property|name)=["\'](?:og:image|twitter:image)["\']', head, re.I))
+        return urljoin(r.url, html.unescape(m.group(1).strip())) if m else ""
+    except Exception:
+        return ""
+
+
+def add_thumbs(items, limit=20):
+    """صور مصغرة لأول الكروت بالتوازي (8 في نفس الوقت) ومتخزنة يوم كامل عشان مانجيبهاش تاني"""
+    cache = _thumb_cache()
+    todo = []
+    for a in items[:limit]:
+        u = a.get("url", "")
+        img = a.get("thumb") or a.get("socialimage") or a.get("image") or ""
+        if img:
+            a["thumb"] = img
+        elif u in cache:
+            a["thumb"] = cache[u]
+        elif u and "news.google.com" not in u:
+            todo.append(a)
+    if not todo:
+        return
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        for a, img in zip(todo, ex.map(lambda x: _og_image(x["url"]), todo)):
+            cache[a["url"]] = img
+            a["thumb"] = img
+    if len(cache) > 5000:
+        cache.clear()
+
+
+def thumb_html(a):
+    img = a.get("thumb") or ""
+    if not img.startswith(("http://", "https://")):
+        return ""
+    return (f"<img class='thumb' src='{html.escape(img, quote=True)}' loading='lazy' referrerpolicy='no-referrer' "
+            "onerror=\"this.style.display='none'\" alt=''>")
+
+APP_VERSION = "9.15"  # بيزيد مع كل نسخة جديدة
 st.set_page_config(page_title="Marsad | مركز الرصد والتحليل", page_icon="🔷", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown(
@@ -254,6 +346,18 @@ a{color:#74ddf1!important;}
  [data-testid="stMainBlockContainer"]{padding-left:.65rem!important;padding-right:.65rem!important;}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}}
+/* 9.15: شريط تمرير واضح وتخين على الكمبيوتر عشان يتمسك بالماوس، ورفيع على الموبايل */
+html{scrollbar-width:auto;scrollbar-color:#5fb8ff #0b1a30;}
+*{scrollbar-color:#5fb8ff #0b1a30;}
+::-webkit-scrollbar{width:16px;height:14px;}
+::-webkit-scrollbar-track{background:#0b1a30;border-radius:8px;}
+::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#5fb8ff,#7c6cf0);border-radius:8px;border:3px solid #0b1a30;min-height:48px;}
+::-webkit-scrollbar-thumb:hover{background:#8fd0ff;}
+@media(max-width:720px){::-webkit-scrollbar{width:5px;height:5px;}::-webkit-scrollbar-thumb{border:0;}}
+/* 9.15: صورة مصغرة جنب العنوان + علامة المقال المدفوع */
+.thumb{float:left;width:118px;height:78px;object-fit:cover;border-radius:10px;margin:2px 0 6px 12px;border:1px solid rgba(120,150,205,.35);background:#0b1a30;}
+@media(max-width:720px){.thumb{width:86px;height:60px;}}
+.pay{background:rgba(246,199,107,.18)!important;color:#ffe2a6!important;border:1px solid rgba(246,199,107,.55)!important;padding:2px 9px;border-radius:999px;font-size:.76rem;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -425,6 +529,59 @@ def alt_block(title, url):
                     f"[Google](https://www.google.com/search?q={qq}) · [Bing أخبار](https://www.bing.com/news/search?q={qq})")
 
 
+def untranslate_goog(url):
+    """9.15: لو الرابط نسخة «ترجمة جوجل» (xxx.translate.goog) بنرجّعه للرابط الأصلي.
+    السبب (من الصورة): التطبيق كان بيفتح صفحة ترجمة جوجل نفسها كأنها المقال، فكان بيطلع إعلانات Taboola مترجمة بدل المقال."""
+    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+    try:
+        p_ = urlsplit(url)
+        host = p_.hostname or ""
+        if not host.endswith(".translate.goog"):
+            return url
+        h = host[: -len(".translate.goog")].replace("--", "\x00").replace("-", ".").replace("\x00", "-")
+        q = urlencode([(k, v) for k, v in parse_qsl(p_.query, keep_blank_values=True) if not k.startswith("_x_tr_")])
+        return urlunsplit(("https", h, p_.path or "/", q, ""))
+    except Exception:
+        return url
+
+
+_JUNK_LINE = re.compile(r"taboola|outbrain|utm_source=|utm_medium=|tblci|track\.[a-z]+\.com|go\.[a-z]+\.com/|doubleclick|"
+                        r"\bsponsored\b|\bpromoted\b|\badvertisement\b|إعلان|محتوى مدعوم|برعاية|اعرف المزيد|Learn More|Read More|Sign up|Subscribe",
+                        re.I)
+
+
+def clean_reader_text(text):
+    """9.15: تنضيف نص المقال اللي جاي من خدمة القراءة البديلة (Jina): بيشيل الصور والروابط والإعلانات والمقالات المقترحة
+    ويسيب كلام المقال بس. ده اللي كان بيطلع «إعلانات مترجمة» في الصورة التالتة."""
+    out = []
+    for line in str(text or "").split("\n"):
+        ln = line.strip()
+        if not ln:
+            out.append("")
+            continue
+        if _JUNK_LINE.search(ln):                                      # إعلان أو رابط تتبع (قبل ما نشيل الروابط)
+            continue
+        ln = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", ln)                 # صور ماركداون
+        _rest = re.sub(r"\[[^\]]*\]\((?:https?:)?//[^)]*\)", "", ln).strip(" |-–•·")
+        if ln and len(_rest.split()) < 4 and re.search(r"\]\((?:https?:)?//", ln):  # سطر كله رابط = مقال مقترح أو إعلان
+            continue
+        ln = re.sub(r"\[([^\]]*)\]\((?:https?:)?//[^)]*\)", r"\1", ln)  # [كلام](رابط) ← كلام
+        if _JUNK_LINE.search(ln):
+            continue
+        urls = re.findall(r"https?://\S+", ln)
+        bare = re.sub(r"https?://\S+", "", ln)
+        if urls and len(bare.split()) < 8:                         # سطر أغلبه روابط
+            continue
+        if re.search(r"[A-Za-z0-9_\-]{35,}", bare):                # أكواد تتبع طويلة
+            continue
+        bare = re.sub(r"^[#>*\-\s]+", "", bare).strip()
+        if len(bare) < 3:
+            continue
+        out.append(bare)
+    txt = re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+    return txt or str(text or "")
+
+
 def translate_proxy_url(url, tl="ar"):
     """رابط نسخة مترجمة من الصفحة عبر ترجمة جوجل (translate.goog)"""
     from urllib.parse import urlsplit
@@ -454,22 +611,23 @@ def frame_blocked(url):
 def embed_browser(url):
     """فتح الصفحة الأصلية مترجمة: أزرار تاب جديد (الأضمن) + إطار داخلي اختياري"""
     import streamlit.components.v1 as components
-    with st.expander("🌐 افتح الصفحة الأصلية مترجمة للعربية", expanded=True):
-        c1, c2 = st.columns(2)
-        c1.link_button("🌐 مترجمة (ترجمة جوجل) ↗️", translate_proxy_url(url), use_container_width=True, type="primary")
-        c2.link_button("📄 الأصلية ↗️", url, use_container_width=True)
-        st.caption("لو الأصلية فتحت عندك، اضغط بيمين الماوس ← «ترجمة إلى العربية» (متصفح كروم بيترجم أي لغة). "
-                   "الزرارين بيفتحوا في تاب جديد وده أضمن من الإطار.")
-        if st.checkbox("جرّب عرضها داخل هذه الصفحة (قد لا يعمل مع بعض المواقع)", key="emb_on"):
+    with st.expander("🌐 الصفحة الأصلية مترجمة للعربية (جوه التطبيق)", expanded=False):
+        st.caption("المقال المترجم تحت في الصفحة دي هو الأساس. هنا تقدر تشوف شكل الصفحة الأصلية نفسها مترجمة، جوه التطبيق.")
+        if st.checkbox("📖 اعرض الصفحة الأصلية مترجمة هنا جوه التطبيق (بتاكل نت أكتر)", value=False, key="emb_on"):
             mode = st.radio("العرض", ["مترجمة للعربية", "الأصلية بلغتها"], horizontal=True, key="emb_mode")
             src = translate_proxy_url(url) if mode.startswith("مترجمة") else url
             if frame_blocked(src):
-                st.warning("🚫 الموقع ده بيمنع عرض صفحاته جوه مواقع تانية، فالإطار هيطلع فاضي. افتحها من الزرارين اللي فوق.")
-                return
-            components.html(
-                f"<iframe src='{html.escape(src, quote=True)}' style='width:100%;height:690px;border:1px solid #334155;border-radius:8px;background:#fff' "
-                "referrerpolicy='no-referrer'></iframe>", height=700, scrolling=False)
-            st.caption("لو ظهرت علامة وش حزين، يبقى الموقع مانع العرض داخل صفحات تانية. استخدم الزرارين اللي فوق.")
+                st.warning("🚫 الموقع ده بيمنع عرض صفحاته جوه مواقع تانية، فالإطار هيطلع فاضي. "
+                           "اقرا المقال المترجم تحت، أو جرّب «الأصلية بلغتها»، أو افتحه برة من الزرار اللي تحت.")
+            else:
+                components.html(
+                    f"<iframe src='{html.escape(src, quote=True)}' style='width:100%;height:690px;border:1px solid #334155;border-radius:8px;background:#fff' "
+                    "referrerpolicy='no-referrer'></iframe>", height=700, scrolling=False)
+                st.caption("لو ظهرت علامة وش حزين، يبقى الموقع مانع العرض داخل صفحات تانية. اقرا المقال المترجم تحت.")
+        st.caption("↗️ آخر حل لو كل اللي جوه مانفعش: الزرارين دول بيخرجوك برة التطبيق للمتصفح.")
+        o1, o2 = st.columns(2)
+        o1.link_button("🌐 مترجمة في المتصفح (برة)", translate_proxy_url(url), use_container_width=True)
+        o2.link_button("📄 الأصلية في المتصفح (برة)", url, use_container_width=True)
 
 
 _SCRIPT_RULES = (
@@ -505,11 +663,12 @@ SCRIPT_KINDS = {
 }
 
 
-def copy_block(url, title, title_ar, art, body_ar):
+def copy_block(url, title, title_ar, art, body_ar, expanded=False):
     """نص جاهز للنسخ (نوت / ذكاء اصطناعي): العنوان والمصدر والتاريخ والرابط ثم النص المترجم"""
     dom = core._host(url)
-    with st.expander("📋 انسخ المقال المترجم (للنوت أو لأي ذكاء اصطناعي)", expanded=False):
-        kind = st.selectbox("أضف في أول النص تعليمات جاهزة للذكاء الاصطناعي", list(SCRIPT_KINDS), key="cp_kind")
+    with st.expander("📋 برومبت المقال / انسخ المقال المترجم (للنوت أو لأي ذكاء اصطناعي)", expanded=expanded):
+        kind = st.selectbox("أضف في أول النص تعليمات جاهزة للذكاء الاصطناعي", list(SCRIPT_KINDS), key="cp_kind",
+                            index=list(SCRIPT_KINDS).index("تحليل وربط عام") if expanded else 0)
         st.caption("لو هتبعت أكتر من مقال: اختار التعليمات مع **أول** مقال بس، ولمّا تخلّص المقالات كلها اكتب: «دلوقتي اكتب السكريبت».")
         with_orig = st.checkbox("أضف النص الأصلي بعد الترجمة", value=False, key="cp_orig")
         head = (f"العنوان: {title_ar}\nالعنوان الأصلي: {title}\nالمصدر: {source_name(dom)} ({dom}) · {source_country(dom)}\n"
@@ -563,6 +722,23 @@ def search_suggestions(title):
     st.caption("كل رابط بيفتح تاب جديد ببحث بعنوان المقال، علشان تلاقي نفس الخبر عند ناس تانية.")
 
 
+def reader_back_bar():
+    """9.15: زرار «ارجع» واضح فوق صفحة المقال. لو المقال اتفتح في نافذة/تاب لوحده بيقفلها فترجع للقايمة في نفس مكانك،
+    ولو اتفتح في نفس الصفحة بيرجع خطوة لورا."""
+    import streamlit.components.v1 as components
+    components.html("""
+<div style="direction:rtl;font-family:Tahoma,Arial">
+<button id="bk" style="width:100%;padding:12px;border-radius:12px;border:1px solid #57cfe8;background:linear-gradient(135deg,#2469b8,#5c4bb1);
+color:#fff;font-size:17px;font-weight:700;cursor:pointer">⬅️ ارجع لقايمة الأخبار (نفس مكانك)</button></div>
+<script>
+document.getElementById('bk').onclick=function(){
+  var W=window.parent; try{W=window.top;}catch(e){}
+  try{ if(W.opener || W.history.length<=1){ W.close(); setTimeout(function(){ try{W.history.back();}catch(e){} },300); return; } }catch(e){}
+  try{ W.history.back(); }catch(e){ window.history.back(); }
+};
+</script>""", height=58)
+
+
 def reader_scroll_tool():
     """ازرار عائمة للتحكم الدقيق في التمرير اثناء قراءة المقال (الشريط الجانبي وعجلة الماوس بيقفزوا جمل كاملة)"""
     import streamlit.components.v1 as components
@@ -573,9 +749,11 @@ def reader_scroll_tool():
     var P=window.parent, D=P.document;
     var old=D.getElementById('rd-scroll-tool'); if(old) old.remove();
     var box=D.createElement('div'); box.id='rd-scroll-tool';
-    box.style.cssText='position:fixed;left:10px;bottom:90px;z-index:99999;display:flex;flex-direction:column;gap:6px;direction:ltr;font-family:sans-serif';
+    // 9.15: على الموبايل الأزرار صغيرة ونص شفافة ومقفولة لحد ما تدوس ⇅ (كانت بتاكل الكلام)
+    var small=(P.innerWidth||800)<820, S=small?34:46, F=small?17:22;
+    box.style.cssText='position:fixed;left:4px;bottom:'+(small?70:90)+'px;z-index:99999;display:flex;flex-direction:column;gap:5px;direction:ltr;font-family:sans-serif;opacity:'+(small?'.55':'.85');
     function btn(t,title){var b=D.createElement('button');b.textContent=t;b.title=title;
-      b.style.cssText='width:56px;height:56px;border-radius:14px;border:2px solid rgba(255,255,255,.6);background:rgba(30,30,40,.92);color:#fff;font-size:26px;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none';
+      b.style.cssText='width:'+S+'px;height:'+S+'px;border-radius:10px;border:1px solid rgba(255,255,255,.45);background:rgba(30,30,40,.85);color:#fff;font-size:'+F+'px;line-height:1;padding:0;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none';
       return b;}
     function area(){return D.querySelector('[data-testid="stMain"]')||D.querySelector('section.main')||D.scrollingElement||D.documentElement;}
     var speed=14, timer=null, auto=false, autoTimer=null, autoSpeed=1;
@@ -597,7 +775,10 @@ def reader_scroll_tool():
     play.onclick=function(){setAuto(!auto);};
     plus.onclick=function(){autoSpeed=Math.min(8,autoSpeed+0.5);speed=Math.min(40,speed+4);};
     minus.onclick=function(){autoSpeed=Math.max(0.5,autoSpeed-0.5);speed=Math.max(4,speed-4);};
-    [up,play,plus,minus,down].forEach(function(b){box.appendChild(b);});
+    var tog=btn('⇅','اظهر/اخفي أزرار التمرير'), open=!small, rest=[up,play,plus,minus,down];
+    function show(){rest.forEach(function(b){b.style.display=open?'block':'none';}); box.style.opacity=open?(small?'.8':'.9'):'.5';}
+    tog.onclick=function(){open=!open;show();};
+    box.appendChild(tog); rest.forEach(function(b){box.appendChild(b);}); show();
     D.body.appendChild(box);
   }catch(e){}
 })();
@@ -612,10 +793,19 @@ def reader_page():
     outlet = unquote(st.query_params.get("o", ""))
 
     st.markdown("## 📖 قراءة المقال مترجماً")
+    reader_back_bar()
     reader_scroll_tool()
     if not url.startswith(("http://", "https://")):
         st.error("رابط غير صالح.")
         return
+    _real = untranslate_goog(url)
+    if _real != url:  # 9.15: اتفتح رابط «ترجمة جوجل» نفسه، فبنرجع للمقال الأصلي ونترجمه إحنا
+        url = _real
+        st.caption("ℹ️ الرابط كان نسخة «ترجمة جوجل»، فرجّعته لرابط المقال الأصلي وبترجمه هنا جوه التطبيق.")
+    _pk = paywall_kind(core._host(url))
+    if _pk:
+        st.warning("🔒 الجريدة دي **بتطلب اشتراك** في أغلب مقالاتها. لو النص طلع ناقص، ده السبب. جرّب «التغطية البديلة» تحت." if _pk == "hard" else
+                   "🔐 الجريدة دي بتسيب **كام مقال مجاني في الشهر** وبعدين تطلب اشتراك. لو النص طلع ناقص، ده غالباً السبب.")
     gnews_link = core._host(url) == "news.google.com"
     if gnews_link:  # رابط أخبار جوجل: نحاول نوصل للرابط الاصلي للجريدة
         with st.spinner("جارٍ الوصول للرابط الاصلي للمقال…"):
@@ -647,6 +837,7 @@ def reader_page():
             search_suggestions(orig_title or core.title_from_url(url))
             alt_block(orig_title or core.title_from_url(url), url)
             return
+        art = {**art, "text": clean_reader_text(art.get("text", ""))}  # 9.15: شيل الإعلانات والروابط قبل الترجمة
         title = art["title"] if art["title"] and art["title"].lower() not in ("google news", "أخبار جوجل") else orig_title
         title = title or orig_title
         title_ar = tr(title, "auto", "ar")
@@ -692,7 +883,9 @@ def reader_page():
     else:
         st.warning("لن نقترح ملخصاً آلياً لهذا النص لأنه أقصر من الحد الأدنى المناسب؛ لتجنب ملخص مضلل.")
 
-    copy_block(url, title, title_ar, art, body_ar)
+    if st.button("🧠 اعمل برومبت للمقال ده لوحده", key="rd_prompt_btn", type="primary", use_container_width=True):
+        st.session_state["rd_prompt_open"] = url
+    copy_block(url, title, title_ar, art, body_ar, expanded=st.session_state.get("rd_prompt_open") == url)
 
     with st.expander("🎧 استمع للمقال بصوت مسموع", expanded=False):
         voice, rate = tts_settings("rd")
@@ -1197,7 +1390,7 @@ if not IS_ADMIN:
 
 def render_about():
     """قسم «ما هذا التطبيق؟»: يُبنى من بيانات التطبيق نفسها فيتحدّث تلقائياً"""
-    n_src = len({d for g in (ISRAEL, USA, UK, REGION, ARABIC, EGYPT) for ents in g.values() for _, d, _ in ents})
+    n_src = len({d for g in (ISRAEL, USA, UK, REGION, WORLD, ARABIC, EGYPT) for ents in g.values() for _, d, _ in ents})
     stats = {"n_sources": n_src, "langs": [core.LANG_NAME_AR.get(c, c) for c, _, _, _ in core.LANGS],
              "n_writers": len(WRITERS), "n_files": len(intel.FILES), "file_names": list(intel.FILES), "threads": list(links_mod.THREADS)}
     with st.expander(about_plain("ما هذا التطبيق؟ وايه اللي بيعمله؟")):
@@ -1484,7 +1677,7 @@ def render_alerts_settings():
             try:
                 cur = store.load_file(GH_TOKEN, GH_GIST, ALERTS_OUT, {}) or {}
                 now_ = datetime.now(timezone.utc).isoformat(timespec="seconds")
-                cur["items"] = [{"id": "test_" + hashlib.sha1(now_.encode()).hexdigest()[:10], "cat": "job", "title": "🧪 إشعار تجربة من المرصد",
+                cur["items"] = [{"id": "test_" + hashlib.sha1(now_.encode()).hexdigest()[:10], "cat": "test", "title": "🧪 إشعار تجربة من المرصد",
                                  "body": "لو شايف ده على الموبايل أو الكمبيوتر، يبقى الإشعارات شغالة.", "url": "", "section": "home",
                                  "at": now_}] + (cur.get("items") or [])[:149]
                 cur["updated"] = now_
@@ -1926,7 +2119,7 @@ MAIN_SECTIONS = {"home": "🏠 الرئيسية", "search": "🔎 البحث و�
                  "guide": "📘 دليل الاستخدام"}
 SUB_SECTIONS = {
     "search": {"geo": "🌍 بحث حسب المنطقة", "eg": "🇪🇬 الشأن المصري", "ml": "🔤 ترجمة ثم بحث", "br": "🗞️ تصفح المصادر",
-               "paid": "🧾 رادار التقارير المدفوعة", "gd": "🌐 بحث GDELT"},
+               "paid": "🧾 رادار التقارير المدفوعة", "gd": "🌐 بحث GDELT", "pr": "🎯 بحث دقيق"},
     "intel": {"wr": "✍️ كتّاب ومحللون", "in": "🛰️ مكتب الاستخبارات", "health": "🩺 صحة المصادر",
               "clusters": "🧩 تجميع الأحداث والروايات", "entities": "🧭 الكيانات والتناقضات"},
     "library": {"dos": "🧵 الملفات والخيوط", "basket": "🧺 سلة المقالات والسكريبت", "sv": "📌 المحفوظات", "lab": "🧠 ورشة التحليل",
@@ -2019,7 +2212,7 @@ def use_filters(p, level="full"):
 
 
 def pick_sources(key, groups, allow_custom=True):
-    custom_lang = "en" if key == "rg" else ("ar" if key == "eg" else "both")
+    custom_lang = "en" if key in ("rg", "wd") else ("ar" if key == "eg" else "both")
     """يعرض اختيار المصادر ويعيد قائمة (label, domains, lang)"""
     chosen = []
     extra_src = [(x["label"], x["domain"], x["lang"]) for x in S()["sources"] if x["group"] == key]
@@ -2156,11 +2349,11 @@ def card_html(a):
             (f"<div class='ar-title'>{orig}</div>" if core._HAS_AR.search(a.get("title") or "") else
              f"<div class='ltr' dir='ltr' style='font-size:1.05rem;font-weight:700'>{orig}</div><div class='meta'>⏳ العنوان لسه مش مترجم (خدمة الترجمة كانت مشغولة)</div>"))
     return (
-        head + f"{en_line}"
+        thumb_html(a) + head + f"{en_line}"
         f"<div class='meta'>🕒 {fmt_seen(a.get('seendate', ''))} (القاهرة)<br>{wline}"
         f"🌐 المصدر: {src}"
         + (f" · 🧭 {html.escape(a['country_ar'])}" if a.get("side") and a.get("country_ar") else "")
-        + f" · <span class='badge'>{html.escape(ctag)}</span></div>"
+        + f" · <span class='badge'>{html.escape(ctag)}</span>{pay_badge(dom)}</div><div style='clear:both'></div>"
         f"<a class='btn' href='{html.escape(link)}' target='_blank' rel='noopener'>ترجم المقال</a>"
     )
 
@@ -2192,6 +2385,101 @@ def snippet_html(a, hl):
 def live_html(items, hl):
     """عرض خفيف (بدون أزرار) أثناء البحث؛ تُرسم الأزرار الكاملة بعد الانتهاء أو الإيقاف"""
     return "".join(f"<div class='card'>{card_html(a)}{snippet_html(a, hl)}</div>" for a in items)
+
+
+def count_mentions(a, stems):
+    """9.15: بيقرا نص المقال ويعدّ كلمتك اتذكرت كام مرة (كل صيغها المترجمة: عربي/إنجليزي/عبري…)"""
+    stems = [x for x in (stems or []) if x and len(x) > 1]
+    if not stems:
+        return False
+    art = core.fetch_article(a.get("url", ""))
+    if not art or not art.get("text"):
+        a["checked"], a["fetched"] = True, False
+        return False
+    text = clean_reader_text(art["text"])
+    rx = re.compile("|".join(re.escape(x) for x in sorted(set(stems), key=len, reverse=True)), re.I)
+    n = len(rx.findall(text))
+    a["mcount"], a["words"], a["fetched"], a["checked"] = n, max(1, len(text.split())), True, True
+    a["found"] = n > 0
+    a["mlevel"] = "محوري" if n >= 5 else ("ملحوظ" if n >= 2 else "عابر")
+    if n and not a.get("snips"):
+        m = rx.search(text)
+        a["snips"] = [text[max(0, m.start() - 160): m.end() + 160].replace("\n", " ")]
+    return True
+
+
+def article_actions(a, key, i, data):
+    """9.15: نفس الأزرار تحت كل خبر في كل الأقسام: السلة، البرومبتات، المقتطف، الملخص، عدد مرات الذكر، الاستماع، الحفظ"""
+    url = a.get("url", "")
+    data = data if isinstance(data, dict) else {}
+    data.setdefault("summaries", {})
+    hl = data.get("hl") or []
+    _article_key = key + "_" + hashlib.sha256(str(url or f"{key}_{i}").encode("utf-8")).hexdigest()[:12] + f"_{i}"  # فيه اسم التاب ورقم الكارت عشان مايتكررش
+    _act0, _act1 = st.columns(2)
+    _act3, _act2 = st.columns(2)
+    basket_button(_act0, a, key, _article_key)
+    if _act3.button("🔎 برومبت يدوّر على الخبر كامل", key=f"find_one_{_article_key}", use_container_width=True):
+        st.session_state["article_prompt_active"] = {"url": url, "title": a.get("title_ar") or a.get("title") or "خبر",
+                                                     "prompt": article_script_prompts_mod.build_find_prompt([{**a, "outlet": src_plain(a.get("domain", ""))}])}
+    if _act1.button("🎬 برومبت سكريبت للخبر ده", key=f"script_one_{_article_key}", use_container_width=True):
+        st.session_state["article_prompt_active"] = {"url": url, "title": a.get("title_ar") or a.get("title") or "مقال",
+                                                     "prompt": article_script_prompts_mod.build_script_prompt([a])}
+    if _act2.button("🌐 روابط تدوّر على نسخة مجانية", key=f"alt_one_{_article_key}", use_container_width=True):
+        st.session_state["article_alt_active"] = {"url": url, "title": a.get("title_ar") or a.get("title") or "مقال", "links": article_script_prompts_mod.alternative_search_links(a)}
+    _ap = st.session_state.get("article_prompt_active") or {}
+    if _ap.get("url") == url:
+        with st.expander("🧠 البرومبت الجاهز للمقال ده (انسخه من زرار النسخ فوق على اليمين)", expanded=True):
+            st.caption("لو عايز تقرا المقال كله الأول وتربطه بمقالات تانية، ضيفه للسلة.")
+            st.code(_ap["prompt"], language=None)
+    _alt = st.session_state.get("article_alt_active") or {}
+    if _alt.get("url") == url:
+        with st.expander("🔎 مسارات البحث عن تغطيات مفتوحة بديلة", expanded=True):
+            st.caption("روابط بحث قانونية عن تغطيات مستقلة أو مقابلات أو تصريحات أصلية. مش بتضمن نسخة مجانية من التقرير المدفوع.")
+            for _lnk in _alt.get("links", []):
+                st.markdown(f"**{_lnk['label']}**  ·  [Google]({_lnk['google']})  ·  [Google News]({_lnk['news']})")
+    _sst = a.get("summary_status")
+    if a.get("summary_ar") and _sst not in ("missing_snippet",):
+        _lbl = {"page_teaser": "📝 مقتطف من صفحة الخبر (مترجم):", "page_teaser_untranslated": "📝 مقتطف من صفحة الخبر:"}.get(_sst, "📝 ملخص/مقتطف مترجم:")
+        st.markdown(f"**{_lbl}** " + a["summary_ar"])
+        if _sst not in ("translated_snippet", "page_teaser", "page_teaser_untranslated", "teaser_missing", None):
+            st.caption("حالة الملخص: " + str(_sst))
+    elif not core.has_snippet(a) and url:
+        if st.button("📝 هات مقتطف من صفحة الخبر", key=f"teaser_{_article_key}"):
+            with st.spinner("بنجيب المقتطف…"):
+                n_t = core.add_teasers([a], limit=1)
+            if not n_t:
+                a["summary_ar"], a["summary_status"] = "الموقع مانشرش وصف للخبر ده. افتح «ترجم المقال».", "teaser_missing"
+            st.rerun()
+    if a.get("checked"):
+        if not a.get("fetched"):
+            st.caption("ℹ️ تعذّر فحص نص المقال (قد يكون خلف اشتراك أو يحجب الزحف).")
+        elif a.get("found"):
+            st.success("✅ ذُكرت كلمتك في نص المقال:")
+            if mention_line(a):
+                st.markdown(mention_line(a))
+            st.markdown(a.get("snip_ar", ""))
+            for sn in a.get("snips", []):
+                st.markdown(f"<div class='ltr' dir='ltr'>{highlight(sn, hl)}</div>", unsafe_allow_html=True)
+        else:
+            st.warning("⚠️ كلمتك لم تظهر في نص هذا المقال — ربما تطابق GDELT مع الصفحة أو الروابط الجانبية.")
+    if st.button("📝 ملخص المقال في نقاط", key=f"sum_{key}_{i}"):
+        with st.spinner("جارٍ التلخيص…"):
+            data["summaries"][url] = core.summarize(url)
+    if url in data["summaries"]:
+        st.info(data["summaries"][url])
+    listen_widget(a, f"{key}_{i}")
+    if any(x.get("url") == url for x in S()["saved"]):
+        st.caption("✅ محفوظ — تجده في تاب «المحفوظات»")
+    else:
+        st.button("💾 حفظ للقراءة لاحقاً", key=f"save_{key}_{i}", on_click=save_item, args=(a, key))
+    if hl and a.get("mcount") is None and url:
+        if st.button("🔢 كلمتك اتذكرت كام مرة في المقال؟", key=f"cnt_{key}_{i}"):
+            with st.spinner("بقرا المقال وبعدّ…"):
+                ok = count_mentions(a, hl)
+            if not ok:
+                st.caption("ℹ️ مقدرتش أفتح نص المقال (غالباً اشتراك أو الموقع بيحجب). " + ("🔒 الموقع ده بيطلب اشتراك." if paywall_kind(a.get("domain")) else ""))
+            else:
+                st.rerun()
 
 
 def render_results(key):
@@ -2259,68 +2547,13 @@ def render_results(key):
             view_items = sorted(view_items, key=lambda x: (x.get("mcount") or 0), reverse=True)
     n_show = int(st.session_state.get(f"more_{key}", 20))
     total_items = len(view_items)
+    if st.checkbox("🖼️ اعرض صور مصغّرة جنب العناوين", value=True, key=f"thumbs_{key}"):
+        with st.spinner("بجيب الصور المصغرة…"):
+            add_thumbs(view_items[:n_show], limit=n_show)
     for i, a in enumerate(view_items[:n_show]):
-        url = a.get("url", "")
         with st.container(border=True):
             st.markdown(card_html(a), unsafe_allow_html=True)
-            _article_key = key + "_" + hashlib.sha256(str(url or f"{key}_{i}").encode("utf-8")).hexdigest()[:12] + f"_{i}"  # فيه اسم التاب ورقم الكارت عشان مايتكررش
-            _act0, _act1 = st.columns(2)
-            _act3, _act2 = st.columns(2)
-            basket_button(_act0, a, key, _article_key)
-            if _act3.button("🔎 برومبت يدوّر على الخبر كامل", key=f"find_one_{_article_key}", use_container_width=True):
-                st.session_state["article_prompt_active"] = {"url": url, "title": a.get("title_ar") or a.get("title") or "خبر",
-                                                             "prompt": article_script_prompts_mod.build_find_prompt([{**a, "outlet": src_plain(a.get("domain", ""))}])}
-            if _act1.button("🎬 برومبت سكريبت للخبر ده", key=f"script_one_{_article_key}", use_container_width=True):
-                st.session_state["article_prompt_active"] = {"url": url, "title": a.get("title_ar") or a.get("title") or "مقال",
-                                                             "prompt": article_script_prompts_mod.build_script_prompt([a])}
-            if _act2.button("🌐 روابط تدوّر على نسخة مجانية", key=f"alt_one_{_article_key}", use_container_width=True):
-                st.session_state["article_alt_active"] = {"url": url, "title": a.get("title_ar") or a.get("title") or "مقال", "links": article_script_prompts_mod.alternative_search_links(a)}
-            _ap = st.session_state.get("article_prompt_active") or {}
-            if _ap.get("url") == url:
-                with st.expander("🧠 البرومبت الجاهز للمقال ده (انسخه من زرار النسخ فوق على اليمين)", expanded=True):
-                    st.caption("لو عايز تقرا المقال كله الأول وتربطه بمقالات تانية، ضيفه للسلة.")
-                    st.code(_ap["prompt"], language=None)
-            _alt = st.session_state.get("article_alt_active") or {}
-            if _alt.get("url") == url:
-                with st.expander("🔎 مسارات البحث عن تغطيات مفتوحة بديلة", expanded=True):
-                    st.caption("روابط بحث قانونية عن تغطيات مستقلة أو مقابلات أو تصريحات أصلية. مش بتضمن نسخة مجانية من التقرير المدفوع.")
-                    for _lnk in _alt.get("links", []):
-                        st.markdown(f"**{_lnk['label']}**  ·  [Google]({_lnk['google']})  ·  [Google News]({_lnk['news']})")
-            _sst = a.get("summary_status")
-            if a.get("summary_ar") and _sst not in ("missing_snippet",):
-                _lbl = {"page_teaser": "📝 مقتطف من صفحة الخبر (مترجم):", "page_teaser_untranslated": "📝 مقتطف من صفحة الخبر:"}.get(_sst, "📝 ملخص/مقتطف مترجم:")
-                st.markdown(f"**{_lbl}** " + a["summary_ar"])
-                if _sst not in ("translated_snippet", "page_teaser", "page_teaser_untranslated", "teaser_missing", None):
-                    st.caption("حالة الملخص: " + str(_sst))
-            elif not core.has_snippet(a) and url:
-                if st.button("📝 هات مقتطف من صفحة الخبر", key=f"teaser_{_article_key}"):
-                    with st.spinner("بنجيب المقتطف…"):
-                        n_t = core.add_teasers([a], limit=1)
-                    if not n_t:
-                        a["summary_ar"], a["summary_status"] = "الموقع مانشرش وصف للخبر ده. افتح «ترجم المقال».", "teaser_missing"
-                    st.rerun()
-            if a.get("checked"):
-                if not a.get("fetched"):
-                    st.caption("ℹ️ تعذّر فحص نص المقال (قد يكون خلف اشتراك أو يحجب الزحف).")
-                elif a.get("found"):
-                    st.success("✅ ذُكرت كلمتك في نص المقال:")
-                    if mention_line(a):
-                        st.markdown(mention_line(a))
-                    st.markdown(a.get("snip_ar", ""))
-                    for sn in a.get("snips", []):
-                        st.markdown(f"<div class='ltr' dir='ltr'>{highlight(sn, data['hl'])}</div>", unsafe_allow_html=True)
-                else:
-                    st.warning("⚠️ كلمتك لم تظهر في نص هذا المقال — ربما تطابق GDELT مع الصفحة أو الروابط الجانبية.")
-            if st.button("📝 ملخص المقال في نقاط", key=f"sum_{key}_{i}"):
-                with st.spinner("جارٍ التلخيص…"):
-                    data["summaries"][url] = core.summarize(url)
-            if url in data["summaries"]:
-                st.info(data["summaries"][url])
-            listen_widget(a, f"{key}_{i}")
-            if any(x.get("url") == url for x in S()["saved"]):
-                st.caption("✅ محفوظ — تجده في تاب «المحفوظات»")
-            else:
-                st.button("💾 حفظ للقراءة لاحقاً", key=f"save_{key}_{i}", on_click=save_item, args=(a, key))
+            article_actions(a, key, i, data)
     basket_bar(key)
     if total_items > n_show:
         st.caption(f"معروض {n_show} من {total_items} نتيجة (بنعرضهم على دفعات عشان الصفحة تفضل خفيفة).")
@@ -2329,26 +2562,52 @@ def render_results(key):
             st.rerun()
 
 
+DOCK_NAMES = {"il": "🇮🇱 الإسرائيلية", "us": "🇺🇸 الأمريكية", "uk": "🇬🇧 البريطانية", "rg": "🌍 تركيا وإيران وإثيوبيا",
+              "wd": "🌐 الأخبار الدولية", "eg": "🇪🇬 الشأن المصري", "egt": "🇪🇬 تتبّع موضوع مصري", "ml": "🔤 ترجمة ثم بحث",
+              "br": "🗞️ تصفح المصادر", "gd": "🌐 GDELT", "in": "🛰️ مكتب الاستخبارات", "wr": "✍️ الكتّاب الأجانب",
+              "wa": "🇸🇦 الكتّاب العرب", "pr": "🎯 البحث الدقيق", "home": "🏠 البحث السريع"}
+
+
+def _page_result_keys():
+    """مفاتيح نتايج القسم المفتوح دلوقتي (عشان الدرج يعرض نتايج القسم ده الأول)"""
+    sub = NAV_SUB
+    if sub == "geo":
+        g = str(st.session_state.get("geo_scope", ""))
+        return [{"🇮🇱": "il", "🇺🇸": "us", "🇬🇧": "uk", "🌍": "rg", "🌐": "wd"}.get(g[:2], g[:1] and "il")]
+    return {"eg": ["eg", "egt"], "wr": ["wr", "wa"], "ml": ["ml"], "br": ["br"], "gd": ["gd"], "in": ["in"], "pr": ["pr"]}.get(sub, [])
+
+
 def render_global_results_dock():
-    """Persistent, cross-section dock for the latest result sets loaded in this app session."""
+    """درج النتايج المحفوظة. 9.15: قبل كده كان بيعرض أحدث نتايج من أي تاب في كل الأقسام، فكان بيبان في «الشأن المصري»
+    مقالات الشرق الأوسط عن الصين (جاية من تاب الكتّاب العرب). دلوقتي بيقول بوضوح النتايج دي من أنهي تاب، ومش بيظهر جوه
+    أقسام البحث اللي ليها نتايجها الخاصة."""
+    if NAV_MAIN == "search" or NAV_SUB in ("wr", "in"):
+        return  # الأقسام دي بتعرض نتايجها هي تحت (محفوظة لحد ما تبحث تاني)، فالدرج هنا كان بيلخبط
     sets = [(k[4:], v) for k, v in st.session_state.items()
             if k.startswith("res_") and isinstance(v, dict) and isinstance(v.get("items"), list) and v.get("items")]
     if not sets:
         return
-    labels = {f"{name} · {len(data.get('items', []))} نتيجة · {data.get('saved_at', 'جلسة حالية')[:16]}": (name, data)
-              for name, data in sorted(sets, key=lambda pair: pair[1].get("saved_at", ""), reverse=True)}
-    with st.expander(f"📌 درج نتائج البحث المحفوظة · {sum(len(v.get('items', [])) for _, v in sets)} نتيجة متاحة من {len(sets)} تبويبات", expanded=False):
-        st.caption("الدرج ده ظاهر في كل أقسام التطبيق. البحث الجديد يستبدل نتائج التبويب نفسه فقط؛ باقي التبويبات تظل كما هي. الاسترجاع بعد إغلاق التطبيق يعتمد على تفعيل GitHub Gist.")
-        chosen = st.selectbox("اعرض نتائج أي تبويب؟", list(labels), key="global_results_dock_select")
+    sets.sort(key=lambda pair: pair[1].get("saved_at", ""), reverse=True)
+    mine = _page_result_keys()
+    sets.sort(key=lambda pair: 0 if pair[0] in mine else 1)
+    labels = {f"{DOCK_NAMES.get(name, name)} · {len(data.get('items', []))} نتيجة": (name, data) for name, data in sets}
+    with st.expander(f"📌 نتايج آخر بحث في كل تاب · {len(sets)} تاب", expanded=False):
+        st.caption("هنا نتايج البحث اللي عملته في التابات التانية، كل تاب لوحده. اختار التاب اللي عايزه من القايمة.")
+        chosen = st.selectbox("نتايج أنهي تاب؟", list(labels), key="global_results_dock_select")
         _name, _data = labels[chosen]
-        for _idx, _item in enumerate(_data.get("items", [])[:30]):
-            st.markdown(card_html(_item), unsafe_allow_html=True)
-            _url = _item.get("url", "")
-            if _url and any(x.get("url") == _url for x in S().get("saved", [])):
-                st.caption("✅ محفوظ للقراءة لاحقاً")
-            elif _url:
-                st.button("💾 حفظ للقراءة لاحقاً", key=f"global_save_{hashlib.sha256(_url.encode()).hexdigest()[:12]}",
-                          on_click=save_item, args=(_item, _name))
+        st.info(f"📂 دي نتايج تاب: **{DOCK_NAMES.get(_name, _name)}**")
+        n_dock = int(st.session_state.get("dock_more", 10))
+        items = _data.get("items", [])
+        if st.checkbox("🖼️ صور مصغّرة", value=True, key="dock_thumbs"):
+            add_thumbs(items[:n_dock], limit=n_dock)
+        for _idx, _item in enumerate(items[:n_dock]):
+            with st.container(border=True):
+                st.markdown(card_html(_item), unsafe_allow_html=True)
+                article_actions(_item, f"dock_{_name}", _idx, _data)
+        if len(items) > n_dock:
+            if st.button(f"⬇️ اعرض 10 كمان (باقي {len(items) - n_dock})", key="dock_more_btn", use_container_width=True):
+                st.session_state["dock_more"] = n_dock + 10
+                st.rerun()
 
 
 # درج عام يظهر خارج التبويبات، فتظل النتائج متاحة أثناء التنقل بين أقسام التطبيق.
@@ -2730,7 +2989,7 @@ def render_home():
                 _seen_u.add(u)
                 all_items.append(a)
     today_n = sum(1 for a in all_items if str(a.get("seendate", "")).startswith(now_utc0))
-    n_src = len({d for g in (ISRAEL, USA, UK, REGION, ARABIC, EGYPT) for ents in g.values() for _, d, _ in ents}
+    n_src = len({d for g in (ISRAEL, USA, UK, REGION, WORLD, ARABIC, EGYPT) for ents in g.values() for _, d, _ in ents}
                 | {x.get("domain") for x in S().get("sources", []) if x.get("domain")})
     n_files = len(S().get("research_cases") or []) + len(S().get("intel_case_files") or []) + len(S().get("intel_dossiers") or [])
     metrics = st.columns(4)
@@ -2786,8 +3045,10 @@ if _on("search", "geo"):
                                       "مصادر أمريكية ومراكز أبحاث وصحافة دولية ناطقة بالإنجليزية."),
             "🇬🇧 بريطانيا": ("uk", UK, "UK", "UK", "ابحث في المصادر البريطانية",
                               "صحف وقنوات بريطانية ومصادر متخصصة بالشرق الأوسط."),
-            "🌍 تركيا وإيران وإثيوبيا": ("rg", REGION, None, "US", "ابحث في مصادر تركيا وإيران وإثيوبيا",
-                                         "مصادر محلية بلغاتها: التركية والفارسية والأمهرية والإنجليزية.")
+            "🌍 تركيا وإيران وإثيوبيا": ("rg", REGION_LOCAL, None, "US", "ابحث في مصادر تركيا وإيران وإثيوبيا",
+                                         "مصادر محلية بلغاتها: التركية والفارسية والأمهرية والإنجليزية."),
+            "🌐 الأخبار الدولية": ("wd", WORLD, None, "US", "ابحث في الأخبار الدولية",
+                                   "مصادر عربية بالإنجليزي، وروسيا وأوكرانيا وفرنسا وإسبانيا وألمانيا وأوروبا والصين وأفريقيا والمؤسسات الدولية.")
         }
         geo_choice = st.radio("نطاق الرصد", list(geo_options), horizontal=True, key="geo_scope")
         geo_key, geo_groups, geo_gd, geo_gn, geo_label, geo_help = geo_options[geo_choice]
@@ -3895,7 +4156,7 @@ TOPIC_CFG, TOPIC_STATUS = "marsad_topic_cfg.json", "marsad_topic_job.json"
 EG_TABS = {"eg", "egt"}  # تابات الشأن المصري: نتايجها بتروح لربط الشأن المصري بس، ومبتتخلطش بالسياسة الإقليمية
 PROFS = {"pol": {"sx": "", "cfg_file": DOS_CFG_FILE, "res_file": DOS_RES_FILE, "cfg_key": "dos_cfg", "res_key": "dos_res"},
          "eg": {"sx": "_eg", "cfg_file": "marsad_dossiers_eg_cfg.json", "res_file": "marsad_dossiers_eg.json", "cfg_key": "dos_cfg_eg", "res_key": "dos_res_eg"}}
-TAB_LABELS = {"il": "الإسرائيلية", "us": "الأمريكية", "uk": "البريطانية", "rg": "تركيا وإيران وإثيوبيا", "eg": "الشأن المصري", "egt": "تتبّع موضوع", "trend": "ترند/موضوع طارئ", "ml": "ترجمة ثم بحث",
+TAB_LABELS = {"il": "الإسرائيلية", "us": "الأمريكية", "uk": "البريطانية", "rg": "تركيا وإيران وإثيوبيا", "wd": "الأخبار الدولية", "pr": "البحث الدقيق", "eg": "الشأن المصري", "egt": "تتبّع موضوع", "trend": "ترند/موضوع طارئ", "ml": "ترجمة ثم بحث",
               "wr": "الكتّاب", "gd": "GDELT", "br": "تصفّح مصدر", "in": "مكتب الاستخبارات",
               "in_all": "مكتب الاستخبارات", "home": "البحث السريع"}
 DOS_HELP = """
@@ -4357,7 +4618,7 @@ def render_topic_track(P="eg"):
             sel += [e for gg in (ARABIC, ISRAEL, USA, UK) for ents in gg.values() for e in ents if e[1] not in seen]
         gcode, gn_c = "EG", "EG"
     else:
-        groups_ = (USA, UK) if scope.startswith("🇺🇸") else (ISRAEL, USA, UK, REGION, ARABIC)
+        groups_ = (USA, UK) if scope.startswith("🇺🇸") else (ISRAEL, USA, UK, REGION, WORLD, ARABIC)  # 9.15: + الأخبار الدولية
         sel = [e for gg in groups_ for ents in gg.values() for e in ents]
         if scope.startswith("🌐"):
             sel += [e for g, ents in EGYPT.items() if g != ARAB_EG_GROUP for e in ents]
@@ -6647,6 +6908,115 @@ if _on("search", "eg"):
             render_dossiers("eg")
         else:
             curated_tab("eg", EGYPT, "EG", "EG", "ابحث في المصادر المصرية")
+
+# ───────── 9.15: 🎯 البحث الدقيق ─────────
+# الفرق عن البحث العادي: بيطلع الكلمات الأساسية من جملتك، ولازم الخبر يكون فيه الكلمات دي **كلها**،
+# وبيرتّب النتايج حسب قد إيه الخبر عن سؤالك (مش أي حاجة عن السعودية أو الحوثيين لوحدهم).
+PR_STOP = set("""على علي عن في فى من الى إلى الي لـ ل ب و او أو ثم مع بعد قبل عند حول ضد بين خلال منذ حتى كل بعض
+كام كم هل ما ماذا ليه لماذا ازاي كيف فين أين امتى متى ايه إيه اللي الي التي الذي الذين ده دي دا دول هذا هذه ذلك تلك
+ان أن إن انه أنه هو هي هم كان كانت يكون لا لم لن قد مش مافيش فيه فيها عليه عليها اخر آخر جديد عايز عاوز يعني بس
+the a an of on in to at for from by with about how many much what who when where why is are was were did do does""".split())
+
+
+def pr_keywords(sentence):
+    toks = re.findall(r"[\w؀-ۿ]+", sentence or "")
+    out = []
+    for t in toks:
+        tt = t.strip()
+        if len(tt) < 2 or tt.lower() in PR_STOP or tt.isdigit():
+            continue
+        if tt not in out:
+            out.append(tt)
+    # الأفعال (أطلقوا، يهاجمون…) بتخلي البحث ضيق أوي لأن كل جريدة بتكتبها بشكل، فبنسيب الأسماء بس لو فاضل كلمتين أو أكتر
+    nouns = [t for t in out if not (re.match(r"^[اأيتن]", t) and not t.startswith("ال")
+                                    and re.search(r"(وا|و|ون)$", t) and len(t) <= 7)]
+    return (nouns if len(nouns) >= 2 else out)[:6]
+
+
+def pr_all_groups():
+    return {"🇮🇱 إسرائيل": ISRAEL, "🇺🇸 أمريكا": USA, "🇬🇧 بريطانيا": UK, "🌐 الأخبار الدولية": WORLD,
+            "🌍 تركيا وإيران وإثيوبيا والمنطقة": REGION_LOCAL, "🗞️ الصحف العربية": ARABIC, "🇪🇬 المصادر المصرية": EGYPT}
+
+
+def pr_filter(data, kws, sel):
+    """بيسيب بس الأخبار اللي فيها كل كلماتك (في العنوان أو المقتطف أو نص المقال) ويرتّبها حسب الأقرب لسؤالك"""
+    matchers = core.make_matchers(kws, core.codes_for(sel))
+    kept, dropped = [], 0
+    for a in data.get("items", []):
+        head = " ".join(str(a.get(k) or "") for k in ("title", "title_ar", "title_en", "summary_ar", "snip_ar")) + " " + " ".join(a.get("snips") or [])
+        per = [bool(core.find_mentions(head, [m], "AND")[0]) for m in matchers]
+        body_all = bool(a.get("fetched") and a.get("found"))
+        if all(per) or body_all:
+            a["pr_score"] = sum(per) * 3 + (2 if body_all else 0) + min(5, int(a.get("mcount") or 0))
+            kept.append(a)
+        else:
+            dropped += 1
+    kept.sort(key=lambda a: (a.get("pr_score", 0), a.get("seendate", "")), reverse=True)
+    data["items"], data["hidden"] = kept, data.get("hidden", 0) + dropped
+    data["used"] = list(data.get("used", [])) + [f"🎯 البحث الدقيق: اتشال {dropped} خبر مش فيه كل الكلمات ({'، '.join(kws)})"]
+
+
+if _on("search", "pr"):
+    with tab_search:
+        st.markdown("### 🎯 بحث دقيق عن خبر أو موضوع معيّن")
+        st.caption("اكتب سؤالك أو الخبر بكلامك، مثلاً: «الحوثيين أطلقوا كام صاروخ على السعودية». "
+                   "هطلّع الكلمات المهمة، ومش هجيبلك غير الأخبار اللي فيها **كل** الكلمات دي، والأقرب لسؤالك فوق.")
+        pr_q = st.text_input("✍️ اكتب اللي بتدوّر عليه", key="pr_q", placeholder="الحوثيين أطلقوا صواريخ على السعودية")
+        auto_kws = pr_keywords(pr_q)
+        kw_txt = st.text_input("🔑 الكلمات اللي لازم تكون في الخبر (تقدر تعدّلها، وافصل بينها بفاصلة)",
+                               value="، ".join(auto_kws), key=f"pr_kws_{hashlib.md5(pr_q.encode()).hexdigest()[:6]}")
+        kws = [k.strip() for k in TERM_SPLIT.split(kw_txt) if k.strip()]
+        groups_all = pr_all_groups()
+        where = st.radio("🔭 تدوّر فين؟", ["🌐 كل المصادر", "📚 مجموعة مصادر (زي الإسرائيلية بس)", "🎯 مصدر واحد بس"], key="pr_where")
+        if where.startswith("📚"):
+            gsel = st.multiselect("اختار المجموعة أو أكتر", list(groups_all), default=[list(groups_all)[0]], key="pr_groups")
+            sel = [e for g in gsel for ents in groups_all[g].values() for e in ents]
+        elif where.startswith("🎯"):
+            pool_ = [e for g in groups_all.values() for ents in g.values() for e in ents]
+            names_ = list(dict.fromkeys(e[0] for e in pool_))
+            one_ = st.selectbox("اختار المصدر", names_, key="pr_one")
+            sel = [next(e for e in pool_ if e[0] == one_)]
+        else:
+            sel = [e for g in groups_all.values() for ents in g.values() for e in ents]
+        seen_, uniq_ = set(), []
+        for e in sel:
+            if e[1] not in seen_:
+                seen_.add(e[1])
+                uniq_.append(e)
+        sel = uniq_
+        days_ = pick(st, "📅 آخر كام يوم؟", [1, 2, 3, 5, 7, 14, 30], 3, "pr_days")
+        deep_ = st.checkbox("🔬 افحص نص المقالات كمان (أدق بس أبطأ)", value=True, key="pr_deep")
+        st.caption(f"هيدوّر في {len(sel)} مصدر، على: {('، '.join(kws)) or '—'}")
+        if st.button("🎯 دوّر بدقة", type="primary", use_container_width=True, key="pr_go"):
+            if not kws:
+                st.warning("اكتب اللي بتدوّر عليه الأول.")
+            elif not sel:
+                st.warning("اختار مصدر واحد على الأقل.")
+            else:
+                g = globals()
+                now_ = datetime.now(timezone.utc)
+                g.update({"start_utc": now_ - timedelta(days=days_), "end_utc": now_, "joiner": "AND", "ctype": "الكل",
+                          "max_rec": 60, "verify": deep_, "hide_nomatch": False, "query": "، ".join(kws)})
+                g["match"] = next((m for m in core.MATCH_MODES if "AND" in str(m)), core.MATCH_MODES[0])
+                seed, gnotes = [], []
+                if len(sel) <= 60:
+                    with st.spinner("بجيب نتايج أخبار Google الأول…"):
+                        try:
+                            seed, gnotes = gn_seed(sel, "US", kws)
+                        except Exception as ex:
+                            gnotes = [f"Google News تعذّر: {type(ex).__name__}"]
+                do_search("pr", core.jobs_for_sources(sel, None), sel, terms=kws, seed=seed)
+                res_ = st.session_state.get("res_pr")
+                if res_ is not None:
+                    res_["used"] = list(res_.get("used", [])) + gnotes
+                    if len(sel) <= 60:
+                        try:
+                            direct_title_hits("pr", sel, kws)
+                        except Exception as ex:
+                            st.caption(f"تعذّر البحث المباشر في الخلاصات: {type(ex).__name__}")
+                    pr_filter(st.session_state["res_pr"], kws, sel)
+                    update_meta(st.session_state["res_pr"], sel)
+        render_results("pr")
 
 
 if _on("ops"):

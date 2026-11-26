@@ -54,7 +54,6 @@ USA = {
         ("Jewish Insider", "jewishinsider.com", "en"),
         ("The Intercept", "theintercept.com", "en"),
         ("Bloomberg", "bloomberg.com", "en"),
-        ("Reuters", "reuters.com", "en"),
         ("MSNBC", "msnbc.com", "en"),
     ],
     "🏛️ مراكز أبحاث ومجلات متخصصة": [
@@ -75,20 +74,9 @@ USA = {
         ("The War Zone", "twz.com", "en"),
         ("War on the Rocks", "warontherocks.com", "en"),
         ("Institute for the Study of War", "understandingwar.org", "en"),
-        ("Bellingcat", "bellingcat.com", "en"),
         ("Lawfare", "lawfaremedia.org", "en"),
         ("Just Security", "justsecurity.org", "en"),
         ("Semafor", "semafor.com", "en"),
-    ],
-    "🌍 صحافة دولية ناطقة بالإنجليزية": [
-        ("The National", "thenationalnews.com", "en"),
-        ("Arab News", "arabnews.com", "en"),
-        ("Al Jazeera English", "aljazeera.com", "en"),
-        ("The New Humanitarian", "thenewhumanitarian.org", "en"),
-        ("Deutsche Welle (DW)", "dw.com", "en"),
-        ("France 24", "france24.com", "en"),
-        ("Euronews", "euronews.com", "en"),
-        ("Agence France-Presse (AFP)", "afp.com", "en"),
     ],
 }
 
@@ -112,7 +100,6 @@ UK = {
         ("Jewish Chronicle", "thejc.com", "en"),
         ("RUSI", "rusi.org", "en"),
         ("openDemocracy", "opendemocracy.net", "en"),
-        ("France 24 (إنجليزي)", "france24.com", "en"),
         ("IISS – المعهد الدولي للدراسات الاستراتيجية", "iiss.org", "en"),
         ("The Africa Report", "theafricareport.com", "en"),
     ],
@@ -189,6 +176,46 @@ INTERNATIONAL = {
                               ("المنظمة البحرية الدولية IMO", "imo.org", "en"),
                               ("منظمة حظر الأسلحة الكيميائية OPCW", "opcw.org", "en"),
                               ("مفوضية الأمم المتحدة لحقوق الإنسان OHCHR", "ohchr.org", "en")],
+}
+
+# ───────── 🌐 الأخبار الدولية عموماً (مفصولة عن الأمريكية من نسخة 9.15) ─────────
+# كل مجموعة باسم بلدها، والمصادر دي بتنشر بالإنجليزي (أو بلغتها لو مكتوب جنبها)
+WORLD = {
+    "🌍 مصادر عربية بالإنجليزي": [
+        ("Arab News (السعودية)", "arabnews.com", "en"),
+        ("The National (الإمارات)", "thenationalnews.com", "en"),
+        ("Al Jazeera English (قطر)", "aljazeera.com", "en"),
+        ("الشرق الأوسط إنجليزي", "english.aawsat.com", "en"),
+        ("العربية إنجليزي", "english.alarabiya.net", "en"),
+        ("الأهرام أونلاين (مصر)", "english.ahram.org.eg", "en"),
+        ("Egypt Independent (مصر)", "egyptindependent.com", "en"),
+        ("Gulf News (الإمارات)", "gulfnews.com", "en"),
+        ("Asharq Business (السعودية)", "asharqbusiness.com", "en"),
+    ],
+    "🇷🇺 روسيا": [
+        ("تاس TASS", "tass.com", "en"), ("آر تي RT", "rt.com", "en"), ("إنترفاكس", "interfax.com", "en"),
+        ("ميدوزا (معارضة)", "meduza.io", "en"), ("موسكو تايمز (معارضة)", "themoscowtimes.com", "en"),
+        ("آر بي سي", "rbc.ru", "en"),
+    ],
+    "🇺🇦 أوكرانيا": [
+        ("كييف إندبندنت", "kyivindependent.com", "en"), ("كييف بوست", "kyivpost.com", "en"),
+        ("أوكرينفورم (الرسمية)", "ukrinform.net", "en"), ("أوكراينسكا برافدا", "pravda.com.ua", "en"),
+    ],
+    "🇫🇷 فرنسا": [
+        ("فرانس 24", "france24.com", "both"), ("لوموند إنجليزي", "lemonde.fr", "en"),
+        ("وكالة الأنباء الفرنسية AFP", "afp.com", "en"), ("إذاعة فرنسا الدولية RFI", "rfi.fr", "en"),
+    ],
+    "🇪🇸 إسبانيا": [
+        ("إل باييس إنجليزي", "english.elpais.com", "en"), ("وكالة إفي EFE", "efe.com", "en"),
+    ],
+    "🇩🇪 ألمانيا وأوروبا": [
+        ("دويتشه فيله DW", "dw.com", "en"), ("دير شبيجل", "spiegel.de", "en"),
+        ("يورونيوز", "euronews.com", "en"), ("Politico Europe", "politico.eu", "en"),
+        ("Bellingcat (هولندا)", "bellingcat.com", "en"), ("The New Humanitarian (سويسرا)", "thenewhumanitarian.org", "en"),
+    ],
+    "🇨🇳 الصين وشرق آسيا": INTERNATIONAL["🇨🇳 الصين وشرق آسيا"],
+    "🌍 أفريقيا والقرن الأفريقي": INTERNATIONAL["🌍 أفريقيا والقرن الأفريقي"],
+    "🌐 مؤسسات دولية وبيانات": INTERNATIONAL["🌐 مؤسسات دولية وبيانات"],
 }
 
 # صحف عربية (للمقارنة داخل مكتب الاستخبارات): (الاسم، الدومين، "ar")
@@ -329,7 +356,6 @@ REGION = {
 }
 
 
-REGION.update(INTERNATIONAL)
 REGION.update({
     "🇸🇩 السودان وجنوب السودان": [
         ("سودان تريبيون", "sudantribune.com", "en"), ("راديو دبنقا", "dabangasudan.org", "en,ar"),
@@ -369,6 +395,10 @@ REGION.update({
     ],
 })
 
+# تاب «تركيا وإيران وإثيوبيا» بيعرض المنطقة بس. المصادر الدولية بقت في تاب «🌐 الأخبار الدولية» (WORLD).
+# REGION نفسها لسه فيها المصادر الدولية زي الأول، عشان أي ملف تاني بيستخدمها (البحث الشامل وغيره) مايخسرش مصادر.
+REGION_LOCAL = dict(REGION)
+REGION.update(INTERNATIONAL)
 
 # ───────── بلد كل مصدر (لإظهاره بجانب اسمه في كل مكان) ─────────
 FLAGS = {"إسرائيل": "🇮🇱", "أمريكا": "🇺🇸", "بريطانيا": "🇬🇧", "مصر": "🇪🇬", "السعودية": "🇸🇦", "الإمارات": "🇦🇪", "قطر": "🇶🇦",
@@ -414,7 +444,13 @@ _OVERRIDE = {
     "intelligence.gov": "أمريكا", "news.un.org": "الأمم المتحدة", "iaea.org": "الأمم المتحدة", "imo.org": "الأمم المتحدة",
     "opcw.org": "الأمم المتحدة", "ohchr.org": "الأمم المتحدة", "ukdefencejournal.org.uk": "بريطانيا", "forcesnews.com": "بريطانيا",
 }
-FLAGS.update({"ألمانيا": "🇩🇪", "أوكرانيا": "🇺🇦"})
+_OVERRIDE.update({
+    "english.aawsat.com": "السعودية", "english.alarabiya.net": "السعودية", "english.ahram.org.eg": "مصر", "gulfnews.com": "الإمارات",
+    "asharqbusiness.com": "السعودية", "rt.com": "روسيا", "themoscowtimes.com": "روسيا", "kyivindependent.com": "أوكرانيا",
+    "kyivpost.com": "أوكرانيا", "ukrinform.net": "أوكرانيا", "pravda.com.ua": "أوكرانيا", "rfi.fr": "فرنسا",
+    "english.elpais.com": "إسبانيا", "efe.com": "إسبانيا",
+})
+FLAGS.update({"ألمانيا": "🇩🇪", "أوكرانيا": "🇺🇦", "إسبانيا": "🇪🇸"})
 _DOM_COUNTRY = dict(_OVERRIDE)
 for _g, _c in ((ISRAEL, "إسرائيل"), (USA, "أمريكا"), (UK, "بريطانيا")):
     for _ents in _g.values():
@@ -425,6 +461,9 @@ for _title, _ents in REGION.items():
     _c = "إثيوبيا" if "إثيوبيا" in _title else "تركيا" if "تركيا" in _title else "إيران"
     for _n, _d, _l in _ents:
         _DOM_COUNTRY.setdefault(_d, _c)
+for _ents in WORLD.values():
+    for _n, _d, _l in _ents:
+        _DOM_COUNTRY.setdefault(_d, "دولي")
 for _ents in ARABIC.values():
     for _n, _d, _l in _ents:
         _DOM_COUNTRY.setdefault(_d, "مصر" if _d in EGYPT_ARABIC else "")
