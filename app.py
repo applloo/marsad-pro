@@ -150,6 +150,11 @@ def paywall_kind(domain):
     for k, v in PAYWALL.items():
         if d == k or d.endswith("." + k):
             return v
+    try:  # 9.17: وكمان قايمة الجرايد المدفوعة اللي في core.py
+        if d and core.domain_match(d, core.PAYWALLED):
+            return "metered"
+    except Exception:
+        pass
     return ""
 
 
@@ -221,7 +226,7 @@ def thumb_html(a):
     return (f"<img class='thumb' src='{html.escape(img, quote=True)}' loading='lazy' referrerpolicy='no-referrer' "
             "onerror=\"this.style.display='none'\" alt=''>")
 
-APP_VERSION = "9.16"  # بيزيد مع كل نسخة جديدة
+APP_VERSION = "9.17"  # بيزيد مع كل نسخة جديدة
 st.set_page_config(page_title="Marsad | مركز الرصد والتحليل", page_icon="🔷", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown(
@@ -663,6 +668,14 @@ SCRIPT_KINDS = {
 }
 
 
+
+def pw(text):
+    """9.17: بيضيف قاعدة «دوّر على المقالات المدفوعة» لأي برومبت مش فيها (الملفات والروابط والتقارير والسكريبتات وكل الأقسام)"""
+    text = "" if text is None else str(text)
+    if not text.strip() or "مهم عن المقالات المدفوعة" in text:
+        return text
+    return text.rstrip() + "\n\n" + dossiers_mod.PAYWALL_RULE + "\n"
+
 def copy_block(url, title, title_ar, art, body_ar, expanded=False):
     """نص جاهز للنسخ (نوت / ذكاء اصطناعي): العنوان والمصدر والتاريخ والرابط ثم النص المترجم"""
     dom = core._host(url)
@@ -679,10 +692,10 @@ def copy_block(url, title, title_ar, art, body_ar, expanded=False):
         st.caption("اضغط أيقونة النسخ 📋 في الركن العلوي من الصندوق (بتظهر لما تقف عليه أو تلمسه)، وبعدين الصق في أي مكان. "
                    "كرر نفس الشيء مع كل مقال ولصقهم ورا بعض عشان يحصل الربط بينهم.")
         try:
-            st.code(txt, language=None, wrap_lines=True)
+            st.code(pw(txt), language=None, wrap_lines=True)
         except TypeError:
-            st.code(txt, language=None)
-        st.download_button("⬇️ نزّله كملف نصي (.txt)", txt, file_name="article.txt", mime="text/plain", use_container_width=True, key="cp_dl")
+            st.code(pw(txt), language=None)
+        st.download_button("⬇️ نزّله كملف نصي (.txt)", pw(txt), file_name="article.txt", mime="text/plain", use_container_width=True, key="cp_dl")
 
 
 def reader_head(title_en, url, wr, outlet, title_ar=""):
@@ -807,6 +820,15 @@ def reader_page():
     if _pk:
         st.warning("🔒 الجريدة دي **بتطلب اشتراك** في أغلب مقالاتها. لو النص طلع ناقص، ده السبب. جرّب «التغطية البديلة» تحت." if _pk == "hard" else
                    "🔐 الجريدة دي بتسيب **كام مقال مجاني في الشهر** وبعدين تطلب اشتراك. لو النص طلع ناقص، ده غالباً السبب.")
+        if st.button("🔐 اعمل برومبت يدوّر على المقال ده (نفسه وتفسيراته والإشارات ليه)", key="rd_paid_prompt",
+                     type="primary", use_container_width=True):
+            st.session_state["rd_paid_prompt_open"] = url
+        if st.session_state.get("rd_paid_prompt_open") == url:
+            _pp_txt = article_script_prompts_mod.build_paywall_prompt({
+                "url": url, "title": orig_title, "outlet": outlet or src_plain(core._host(url)),
+                "writer": wr, "seendate": seen})
+            st.caption("انسخه من علامة النسخ فوق على الشمال في المربع، والصقه في أي ذكاء اصطناعي عنده بحث على النت (Gemini، ChatGPT، Claude).")
+            st.code(_pp_txt, language=None)
     gnews_link = core._host(url) == "news.google.com"
     if gnews_link:  # رابط أخبار جوجل: نحاول نوصل للرابط الاصلي للجريدة
         with st.spinner("جارٍ الوصول للرابط الاصلي للمقال…"):
@@ -2435,7 +2457,14 @@ def article_actions(a, key, i, data):
     basket_button(_act0, a, key, _article_key)
     if _act3.button("🔎 برومبت يدوّر على الخبر كامل", key=f"find_one_{_article_key}", use_container_width=True):
         st.session_state["article_prompt_active"] = {"url": url, "title": a.get("title_ar") or a.get("title") or "خبر",
-                                                     "prompt": article_script_prompts_mod.build_find_prompt([{**a, "outlet": src_plain(a.get("domain", ""))}])}
+                                                     "prompt": article_script_prompts_mod.build_find_prompt([{**a, "outlet": src_plain(a.get("domain", "")),
+                                                                                                 "paywalled": bool(paywall_kind(a.get("domain") or core._host(url)))}])}
+    if paywall_kind(a.get("domain") or core._host(url)):
+        if st.button("🔐 برومبت يدوّر على المقال المدفوع ده (نفسه وتفسيراته والإشارات ليه)", key=f"paid_one_{_article_key}",
+                     use_container_width=True, type="primary"):
+            st.session_state["article_prompt_active"] = {
+                "url": url, "title": a.get("title_ar") or a.get("title") or "مقال مدفوع",
+                "prompt": article_script_prompts_mod.build_paywall_prompt({**a, "outlet": src_plain(a.get("domain", ""))})}
     if _act1.button("🎬 برومبت سكريبت للخبر ده", key=f"script_one_{_article_key}", use_container_width=True):
         st.session_state["article_prompt_active"] = {"url": url, "title": a.get("title_ar") or a.get("title") or "مقال",
                                                      "prompt": article_script_prompts_mod.build_script_prompt([a])}
@@ -2445,7 +2474,7 @@ def article_actions(a, key, i, data):
     if _ap.get("url") == url:
         with st.expander("🧠 البرومبت الجاهز للمقال ده (انسخه من زرار النسخ فوق على اليمين)", expanded=True):
             st.caption("لو عايز تقرا المقال كله الأول وتربطه بمقالات تانية، ضيفه للسلة.")
-            st.code(_ap["prompt"], language=None)
+            st.code(pw(_ap["prompt"]), language=None)
     _alt = st.session_state.get("article_alt_active") or {}
     if _alt.get("url") == url:
         with st.expander("🔎 مسارات البحث عن تغطيات مفتوحة بديلة", expanded=True):
@@ -3263,7 +3292,7 @@ if _on("search", "paid"):
                     _pp = st.session_state.get("article_prompt_active") or {}
                     if _pp.get("url") == _pitem["url"]:
                         st.caption("البرومبت جاهز. انسخه من زرار النسخ فوق على اليمين.")
-                        st.code(_pp["prompt"], language=None)
+                        st.code(pw(_pp["prompt"]), language=None)
                     st.caption("المتاح هنا عنوان وبيانات وصفية علنية. لو النص الكامل خلف اشتراك، لن نحاول استخراجه أو تخطي بوابة الدفع.")
                     links_paid = paid_radar_mod.legal_search_links(title_en, original)
                     st.markdown("**مسارات البحث والوصول القانوني:** " + " · ".join(f"[{label}]({url})" for label, url in links_paid))
@@ -3884,7 +3913,7 @@ def render_saved():
             _sv_prompt = st.session_state.get("article_prompt_active") or {}
             if _sv_prompt.get("url") == it["url"]:
                 with st.expander("🧠 برومبت السكريبت الجاهز", expanded=True):
-                    st.code(_sv_prompt["prompt"], language=None)
+                    st.code(pw(_sv_prompt["prompt"]), language=None)
             listen_widget(it, f"sv_{h}")
             if it["url"] in sums:
                 st.info(sums[it["url"]])
@@ -4162,7 +4191,7 @@ def render_watch():
         md = watch_mod.to_markdown(data, source_name, fmt_seen)
         st.download_button("⬇️ نزّل التقرير (ملف نصي)", md, file_name="custom_report.md", key="watch_dl")
         with st.expander("📋 نسخ التقرير كنص (تلصقه عند اي ذكاء اصطناعي)"):
-            st.code(md, language=None)
+            st.code(pw(md), language=None)
 
 
 # ───────── 🧵 الملفات والخيوط: ربط كل الأخبار في ملفات وخيوط + منشورات فيس وتويتر + برومبت تحليل جاهز ─────────
@@ -4487,7 +4516,7 @@ def _dos_group(g, scope, key):
         else:
             txt = dossiers_mod.prompt_for(scope, g)
         st.info("📋 دوس علامة النسخ اللي فوق على الشمال في المربع الرمادي، وبعدين الصقه في شات Claude.")
-        st.code(txt, language=None)
+        st.code(pw(txt), language=None)
 
 
 def render_posts(P="pol"):
@@ -4580,11 +4609,12 @@ def render_basket():
         "🔎 دوّر على الأخبار دي كاملة (بالعنوان والترجمة والكاتب والجريدة)"], key="bk_kind")
     items = [{**x, "text": texts.get(x["url"], "")} for x in b]
     if kind.startswith("🔎"):
-        prompt = article_script_prompts_mod.build_find_prompt([{**x, "outlet": lab(x.get("domain", ""))} for x in items])
+        prompt = article_script_prompts_mod.build_find_prompt([{**x, "outlet": lab(x.get("domain", "")),
+                                                                 "paywalled": bool(paywall_kind(x.get("domain")))} for x in items])
         st.caption("البرومبت ده بيطلب من الذكاء الاصطناعي يدوّر على كل خبر بالعنوان الأصلي، وبترجمته، وباسم الكاتب، وباسم الجريدة، وفي الوكالات، "
                    "ويقولك لقاه كامل ولا ملخص ولا ملقاهوش. استخدمه مع ذكاء اصطناعي عنده بحث على النت (جيميناي أو غيره).")
-        st.code(prompt, language=None)
-        st.download_button("⬇️ نزّل البرومبت", prompt, file_name="marsad_find_articles_prompt.txt", key="bk_dl_find")
+        st.code(pw(prompt), language=None)
+        st.download_button("⬇️ نزّل البرومبت", pw(prompt), file_name="marsad_find_articles_prompt.txt", key="bk_dl_find")
     elif kind.startswith("🎬"):
         dur = st.radio("مدة الفيديو", ["3 إلى 5 دقائق", "5 إلى 7 دقائق", "8 إلى 10 دقائق", "12 إلى 15 دقيقة"], index=1, horizontal=True, key="bk_dur")
         if not any(texts.get(x["url"]) for x in b):
@@ -4592,8 +4622,8 @@ def render_basket():
         prompt = article_script_prompts_mod.build_script_prompt(
             [{**x, "outlet": lab(x.get("domain", ""))} for x in items], duration=dur)
         st.caption(f"البرومبت جاهز ({len(prompt):,} حرف). انسخه من زرار النسخ فوق على اليمين، أو نزّله.")
-        st.code(prompt, language=None)
-        st.download_button("⬇️ نزّل البرومبت", prompt, file_name="marsad_basket_script_prompt.txt", key="bk_dl")
+        st.code(pw(prompt), language=None)
+        st.download_button("⬇️ نزّل البرومبت", pw(prompt), file_name="marsad_basket_script_prompt.txt", key="bk_dl")
     else:
         dits = [dossiers_mod.from_app_item({**x, "snip_ar": (x.get("text") or "")[:700] or x.get("summary_ar") or x.get("snip_ar") or x.get("snippet", "")},
                                            lab, source_country, "سلة المقالات") for x in items if x.get("title") or x.get("title_ar")]
@@ -5122,7 +5152,7 @@ def render_analysis_lab():
     if st.session_state.get("analysis_lab_prompt"):
         st.markdown("#### البرومبت الجاهز")
         st.caption("انسخه إلى نموذج الذكاء الاصطناعي. لو المقال خلف اشتراك أو الأرشيف لا يحتوي نصه الكامل، الصق النص بنفسك قبل طلب تحليل تفصيلي.")
-        st.code(st.session_state["analysis_lab_prompt"], language=None)
+        st.code(pw(st.session_state["analysis_lab_prompt"]), language=None)
     cases = S().get("analysis_cases", [])
     if cases:
         with st.expander(f"📚 ملفات التحليل المحفوظة ({len(cases)})", expanded=False):
@@ -5441,7 +5471,7 @@ def render_research_casebook():
             file_name=f"marsad-cumulative-case-{case['id']}.json", mime="application/json",
             key=f"download_cumulative_case_{case['id']}", use_container_width=True)
         if st.session_state.get("cumulative_case_prompt_case_id") == case.get("id"):
-            st.text_area("برومبت التحديث التراكمي", value=st.session_state["cumulative_case_prompt"],
+            st.text_area("برومبت التحديث التراكمي", value=pw(st.session_state["cumulative_case_prompt"]),
                          height=320, key=f"cumulative_case_prompt_display_{case['id']}")
             st.download_button("⬇️ تنزيل برومبت التحديث TXT", st.session_state["cumulative_case_prompt"],
                 file_name=f"marsad-cumulative-update-{case['id']}.txt", mime="text/plain",
@@ -5455,7 +5485,7 @@ def render_research_casebook():
         st.session_state["research_case_prompt"] = casebook_mod.build_prompt(case)
         st.session_state["research_case_prompt_name"] = case.get("title", "research_case")
     if st.session_state.get("research_case_prompt"):
-        st.text_area("البرومبت الناتج", value=st.session_state["research_case_prompt"], height=360, key="research_case_prompt_display")
+        st.text_area("البرومبت الناتج", value=pw(st.session_state["research_case_prompt"]), height=360, key="research_case_prompt_display")
         st.download_button("⬇️ تنزيل البرومبت TXT", data=st.session_state["research_case_prompt"],
                            file_name="marsad_research_prompt.txt", mime="text/plain", key="download_research_prompt")
 
@@ -5569,8 +5599,8 @@ def render_research_casebook():
                     st.warning("متغيرات لم يتم ملؤها: " + "، ".join("{{" + x + "}}" for x in rendered["missing"]))
                 if rendered["unknown"]:
                     st.warning("أسماء متغيرات غير معروفة: " + "، ".join(rendered["unknown"]))
-                st.text_area("البرومبت الناتج", value=rendered["text"], height=280, key=f"pro_var_preview_{case['id']}")
-                st.download_button("⬇️ تنزيل البرومبت الناتج TXT", rendered["text"], file_name="marsad_prompt_filled.txt", mime="text/plain", key=f"pro_var_download_{case['id']}")
+                st.text_area("البرومبت الناتج", value=pw(rendered["text"]), height=280, key=f"pro_var_preview_{case['id']}")
+                st.download_button("⬇️ تنزيل البرومبت الناتج TXT", pw(rendered["text"]), file_name="marsad_prompt_filled.txt", mime="text/plain", key=f"pro_var_download_{case['id']}")
         else:
             st.info("احفظ برومبتاً في المكتبة أولاً، واستخدم الأقواس المزدوجة للمتغيرات مثل {{case_title}}.")
 
@@ -5638,8 +5668,8 @@ def render_research_casebook():
                 stage_payload = prompt_workbench_mod.chain_stage_prompt(active_chain, stage_index, chain_bundle_text)
                 if stage_payload["missing_prior"]:
                     st.warning("تنبيه: توجد مراحل سابقة غير مكتملة: " + "، ".join(stage_payload["missing_prior"]) + ". يمكنك تجهيز البرومبت، لكن لا تعتمد على نتائج لم تُدخل بعد.")
-                st.text_area("برومبت المرحلة الجاهز للإرسال في ChatGPT أو أي محادثة خارجية", value=stage_payload["prompt"], height=300, key=f"pro_chain_prompt_{active_chain['id']}_{stage_index}")
-                st.download_button("⬇️ تنزيل برومبت المرحلة TXT", stage_payload["prompt"], file_name=f"marsad_{active_chain['id']}_{active_chain['stages'][stage_index]['key']}.txt", mime="text/plain", key=f"pro_chain_prompt_dl_{active_chain['id']}_{stage_index}")
+                st.text_area("برومبت المرحلة الجاهز للإرسال في ChatGPT أو أي محادثة خارجية", value=pw(stage_payload["prompt"]), height=300, key=f"pro_chain_prompt_{active_chain['id']}_{stage_index}")
+                st.download_button("⬇️ تنزيل برومبت المرحلة TXT", pw(stage_payload["prompt"]), file_name=f"marsad_{active_chain['id']}_{active_chain['stages'][stage_index]['key']}.txt", mime="text/plain", key=f"pro_chain_prompt_dl_{active_chain['id']}_{stage_index}")
                 with st.form(f"pro_chain_output_form_{active_chain['id']}_{stage_index}"):
                     stage_output_text = st.text_area("الصق هنا نتيجة المرحلة بعد تنفيذها في المحادثة الخارجية", value=active_chain['stages'][stage_index].get('output',''), height=240)
                     mark_stage_done = st.checkbox("اعتماد هذه المرحلة كمكتملة وإتاحتها للمرحلة التالية", value=True)
@@ -5686,8 +5716,8 @@ def render_research_casebook():
                         compare_items.append({"label": c_rec.get("title"), "text": st_rec["output"]})
                 if len(compare_items) >= 2:
                     comparison_prompt = prompt_workbench_mod.compare_outputs(compare_items)
-                    st.text_area("برومبت المقارنة", value=comparison_prompt, height=240, key=f"pro_compare_prompt_{case['id']}")
-                    st.download_button("⬇️ تنزيل برومبت المقارنة", comparison_prompt, file_name="marsad_compare_outputs.txt", mime="text/plain", key=f"pro_compare_dl_{case['id']}")
+                    st.text_area("برومبت المقارنة", value=pw(comparison_prompt), height=240, key=f"pro_compare_prompt_{case['id']}")
+                    st.download_button("⬇️ تنزيل برومبت المقارنة", pw(comparison_prompt), file_name="marsad_compare_outputs.txt", mime="text/plain", key=f"pro_compare_dl_{case['id']}")
                 else:
                     st.info("لا توجد نتيجتان محفوظتان على الأقل لنفس المرحلة ضمن السلاسل المختارة.")
 
@@ -5744,7 +5774,7 @@ def render_research_casebook():
             st.download_button("⬇️ تنزيل برومبت الدفعة TXT", chunk_prompt_text,
                 file_name=f"marsad_{active_rb['id'][:8]}_batch_{active_chunk['index']}.txt",
                 mime="text/plain", key=f"rb_prompt_dl_{active_chunk['id']}")
-            st.text_area("برومبت الدفعة للنسخ", value=chunk_prompt_text, height=220,
+            st.text_area("برومبت الدفعة للنسخ", value=pw(chunk_prompt_text), height=220,
                          key=f"rb_prompt_view_{active_chunk['id']}")
             with st.form(f"rb_output_form_{active_chunk['id']}"):
                 rb_output = st.text_area("الصق نتيجة تحليل الدفعة هنا", value=active_chunk.get("output", ""),
@@ -5775,7 +5805,7 @@ def render_research_casebook():
                     st.download_button("⬇️ تنزيل برومبت دمج البحث الكامل", merge_text,
                         file_name=f"marsad_{active_rb['id'][:8]}_merge.txt", mime="text/plain",
                         key=f"rb_merge_dl_{active_rb['id']}")
-                    st.text_area("برومبت الدمج النهائي", value=merge_text, height=260,
+                    st.text_area("برومبت الدمج النهائي", value=pw(merge_text), height=260,
                                  key=f"rb_merge_view_{active_rb['id']}")
                 except ValueError as exc:
                     st.info(str(exc))
@@ -5832,7 +5862,7 @@ def render_research_casebook():
             st.markdown("##### 1. ورقة القراءة التحليلية")
             read_prompt = video_storyteller_mod.reading_prompt(active_vp)
             st.download_button("⬇️ تنزيل برومبت ورقة القراءة", read_prompt, file_name=f"marsad_video_reading_{active_vp['id'][:8]}.txt", mime="text/plain", key=f"vp_read_dl_{active_vp['id']}")
-            st.text_area("برومبت ورقة القراءة للنسخ", value=read_prompt, height=180, key=f"vp_read_prompt_{active_vp['id']}")
+            st.text_area("برومبت ورقة القراءة للنسخ", value=pw(read_prompt), height=180, key=f"vp_read_prompt_{active_vp['id']}")
             with st.form(f"vp_read_save_{active_vp['id']}"):
                 read_output = st.text_area("الصق نتيجة ورقة القراءة هنا", height=160, key=f"vp_read_output_{active_vp['id']}")
                 read_submit = st.form_submit_button("حفظ ورقة القراءة كإصدار")
@@ -5846,7 +5876,7 @@ def render_research_casebook():
             saved_reading = video_storyteller_mod.latest_artifact(active_vp, "reading_sheet")
             script_prompt_text = video_storyteller_mod.script_prompt(active_vp, saved_reading.get("content", "") if saved_reading else "")
             st.download_button("⬇️ تنزيل برومبت السكريبت والإنتاج", script_prompt_text, file_name=f"marsad_video_script_{active_vp['id'][:8]}.txt", mime="text/plain", key=f"vp_script_dl_{active_vp['id']}")
-            st.text_area("برومبت السكريبت للنسخ", value=script_prompt_text, height=220, key=f"vp_script_prompt_{active_vp['id']}")
+            st.text_area("برومبت السكريبت للنسخ", value=pw(script_prompt_text), height=220, key=f"vp_script_prompt_{active_vp['id']}")
             with st.form(f"vp_script_save_{active_vp['id']}"):
                 script_output = st.text_area("السكريبت المنطوق", height=220, key=f"vp_script_output_{active_vp['id']}")
                 plan_output = st.text_area("خطة المشاهد والإنتاج", height=160, key=f"vp_plan_output_{active_vp['id']}") if cfg['scene_plan_enabled'] else ""
@@ -5875,8 +5905,8 @@ def render_research_casebook():
                         st.session_state[f"vp_revision_prompt_{active_vp['id']}"] = rev_prompt
                     except Exception as exc: st.error(str(exc))
                 if st.session_state.get(f"vp_revision_prompt_{active_vp['id']}"):
-                    st.text_area("برومبت إعادة الكتابة", value=st.session_state[f"vp_revision_prompt_{active_vp['id']}"], height=180, key=f"vp_revision_view_{active_vp['id']}")
-                    st.download_button("⬇️ تنزيل برومبت إعادة الكتابة", st.session_state[f"vp_revision_prompt_{active_vp['id']}"], file_name="marsad_script_revision.txt", mime="text/plain", key=f"vp_revision_dl_{active_vp['id']}")
+                    st.text_area("برومبت إعادة الكتابة", value=pw(st.session_state[f"vp_revision_prompt_{active_vp['id']}"]), height=180, key=f"vp_revision_view_{active_vp['id']}")
+                    st.download_button("⬇️ تنزيل برومبت إعادة الكتابة", pw(st.session_state[f"vp_revision_prompt_{active_vp['id']}"]), file_name="marsad_script_revision.txt", mime="text/plain", key=f"vp_revision_dl_{active_vp['id']}")
             else:
                 st.info("احفظ أول نسخة من السكريبت حتى يظهر مسار إعادة الكتابة.")
 
@@ -5986,7 +6016,7 @@ def render_research_casebook():
         p1.download_button("⬇️ Markdown", pkg_md, file_name=f"marsad_case_v{active_pkg.get('version')}.md", mime="text/markdown", key=f"pkg_md_{active_pkg['id']}", use_container_width=True)
         p2.download_button("⬇️ TXT", analysis_packages_mod.render_text(active_pkg), file_name=f"marsad_case_v{active_pkg.get('version')}.txt", mime="text/plain", key=f"pkg_txt_{active_pkg['id']}", use_container_width=True)
         p3.download_button("⬇️ JSON", pkg_json, file_name=f"marsad_case_v{active_pkg.get('version')}.json", mime="application/json", key=f"pkg_json_{active_pkg['id']}", use_container_width=True)
-        st.text_area("البرومبت والحزمة الجاهزة للنسخ", value=pkg_md, height=300, key=f"pkg_preview_{active_pkg['id']}")
+        st.text_area("البرومبت والحزمة الجاهزة للنسخ", value=pw(pkg_md), height=300, key=f"pkg_preview_{active_pkg['id']}")
         st.info("الحزمة محفوظة. لن يتم إرسالها لأي نموذج إلا بعد ضغط زر الإرسال صراحةً. المفاتيح لا تُحفظ داخل ملف القضية أو GitHub Gist.")
 
         with st.expander("🚀 مركز النماذج AI Hub · اقتراح وموافقة وتشغيل", expanded=False):
@@ -6090,7 +6120,7 @@ def render_research_casebook():
                 file_name=f"marsad_prompt_{active_pkg.get('version')}.txt", mime="text/plain",
                 key=f"router_prompt_download_{active_pkg['id']}", use_container_width=True)
             with st.expander("معاينة البرومبت النهائي قبل الإرسال أو النسخ"):
-                st.text_area("البرومبت الكامل", value=task_prompt, height=280, key=f"router_prompt_preview_{active_pkg['id']}")
+                st.text_area("البرومبت الكامل", value=pw(task_prompt), height=280, key=f"router_prompt_preview_{active_pkg['id']}")
             month_key = datetime.now(timezone.utc).strftime("%Y-%m")
             usage_rows = [x for x in S().get("ai_usage", []) if x.get("month") == month_key]
             month_spend = sum(float(x.get("cost_usd") or 0) for x in usage_rows)
@@ -6279,7 +6309,7 @@ def render_research_casebook():
                         default_job_label = next((k for k, v in job_labels.items() if v.get("id") == active_job_id), next(iter(job_labels)))
                         active_job = job_labels[st.selectbox("تكليفات الإنتاج المحفوظة", list(job_labels), index=list(job_labels).index(default_job_label), key=f"content_job_select_{case['id']}")]
                         st.caption(f"بصمة التكليف SHA-256: {active_job.get('sha256', '')[:20]}… · المصدر: {(active_job.get('result_id') or '')[-10:]}")
-                        st.text_area("تكليف جاهز للإرسال إلى النموذج", value=active_job.get("prompt", ""), height=360, key=f"content_job_prompt_{active_job['id']}")
+                        st.text_area("تكليف جاهز للإرسال إلى النموذج", value=pw(active_job.get("prompt", "")), height=360, key=f"content_job_prompt_{active_job['id']}")
                         d1, d2 = st.columns(2)
                         d1.download_button("⬇️ تنزيل تكليف الإنتاج TXT", active_job.get("prompt", ""), file_name=f"marsad_content_{active_job['id']}.txt", mime="text/plain", key=f"content_job_txt_{active_job['id']}", use_container_width=True)
                         d2.download_button("⬇️ تنزيل بيانات التكليف JSON", content_factory_mod.render_json(active_job), file_name=f"marsad_content_{active_job['id']}.json", mime="application/json", key=f"content_job_json_{active_job['id']}", use_container_width=True)
@@ -6553,7 +6583,7 @@ def render_case_relationship_center(cases):
             st.session_state["case_link_prompt"] = case_links_mod.build_link_prompt(
                 by_id.get(selected_link.get("case_a"), {}), by_id.get(selected_link.get("case_b"), {}), selected_link)
         if st.session_state.get("case_link_prompt"):
-            st.text_area("برومبت فحص العلاقة بين الملفين", value=st.session_state["case_link_prompt"], height=300, key="case_link_prompt_display")
+            st.text_area("برومبت فحص العلاقة بين الملفين", value=pw(st.session_state["case_link_prompt"]), height=300, key="case_link_prompt_display")
             st.download_button("⬇️ تنزيل برومبت فحص العلاقة", data=st.session_state["case_link_prompt"],
                 file_name="marsad_case_link_analysis.txt", mime="text/plain", key="download_case_link_prompt")
     if accepted:
@@ -6708,8 +6738,8 @@ def render_early_warning_center():
         st.download_button("⬇️ تنزيل موجز التغييرات", daily_md, file_name="marsad_early_warning.md", key="early_warning_download")
         prompt = early_warning_mod.build_analysis_prompt(alerts)
         with st.expander("🧠 برومبت التحليل الاستراتيجي للتغييرات"):
-            st.code(prompt, language=None)
-            st.download_button("تنزيل البرومبت", prompt, file_name="early_warning_analysis_prompt.txt", key="early_warning_prompt_download")
+            st.code(pw(prompt), language=None)
+            st.download_button("تنزيل البرومبت", pw(prompt), file_name="early_warning_analysis_prompt.txt", key="early_warning_prompt_download")
     else:
         st.info("لا توجد تغييرات جديدة في آخر فحص. لو ده أول فحص، تم إنشاء خط الأساس فقط.")
     history = (S().get("early_warning") or {}).get("reports", [])
